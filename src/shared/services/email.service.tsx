@@ -11,7 +11,7 @@ export class EmailService {
 
   constructor(private readonly configService: ConfigService) {
     this.resend = new Resend(this.configService.get<string>('resend.apiKey'))
-    this.from = this.configService.get<string>('app.emailFrom')
+    this.from = this.configService.get<string>('app.emailFrom')!
   }
   async sendOTP(payload: { email: string; code: string }) {
     const subject = 'Mã OTP'

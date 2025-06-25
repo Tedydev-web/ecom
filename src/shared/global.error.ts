@@ -28,4 +28,4 @@ export class GlobalError {
   public static UnprocessableEntity(message: string = 'error.UNPROCESSABLE_ENTITY', details?: any): ApiException {
     return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, 'E0006', message, details)
   }
-} 
+}

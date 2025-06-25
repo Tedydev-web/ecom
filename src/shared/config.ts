@@ -121,4 +121,4 @@ export const resend = registerAs('resend', () => ({
 }))
 
 // Export a single object to be loaded in AppModule
-export default [app, jwt, cookie, google, otp, database, resend] 
+export default [app, jwt, cookie, google, otp, database, resend]

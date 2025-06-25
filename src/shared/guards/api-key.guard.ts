@@ -6,7 +6,7 @@ export class APIKeyGuard implements CanActivate {
   private readonly apiKey: string
 
   constructor(private readonly configService: ConfigService) {
-    this.apiKey = this.configService.get<string>('app.apiKey')
+    this.apiKey = this.configService.get<string>('app.apiKey')!
   }
 
   canActivate(context: ExecutionContext): boolean {

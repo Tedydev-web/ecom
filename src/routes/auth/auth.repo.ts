@@ -97,6 +97,10 @@ export class AuthRepository {
     })
   }
 
+  async findUniqueDevice(where: { id: number }): Promise<DeviceType | null> {
+    return this.prismaService.device.findUnique({ where })
+  }
+
   async findUniqueRefreshTokenIncludeUserRole(uniqueObject: {
     token: string
   }): Promise<(RefreshTokenType & { user: UserType & { role: RoleType } }) | null> {

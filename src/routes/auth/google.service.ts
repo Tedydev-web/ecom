@@ -49,7 +49,12 @@ export class GoogleService {
   async googleCallback(
     { code, state }: { code: string; state: string },
     res: Response,
-  ): Promise<Omit<import('/Users/tedydev/Workspace/Codespaces/GitHub/Shopsifu/server-main/src/shared/models/shared-user.model').UserType, 'password' | 'totpSecret'>> {
+  ): Promise<
+    Omit<
+      import('/Users/tedydev/Workspace/Codespaces/GitHub/Shopsifu/server-main/src/shared/models/shared-user.model').UserType,
+      'password' | 'totpSecret'
+    >
+  > {
     try {
       let userAgent = 'Unknown'
       let ip = 'Unknown'

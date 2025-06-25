@@ -1,31 +1,36 @@
 import { Injectable } from '@nestjs/common'
-import * as OTPAuth from 'otpauth'
-import envConfig from 'src/shared/config'
+import { ConfigService } from '@nestjs/config'
+import { authenticator } from 'otplib'
 
 @Injectable()
 export class TwoFactorService {
-  private createTOTP(email: string, secret?: string) {
-    return new OTPAuth.TOTP({
-      issuer: envConfig.APP_NAME,
-      label: email,
-      algorithm: 'SHA1',
-      digits: 6,
-      period: 30,
-      secret: secret || new OTPAuth.Secret(),
-    })
-  }
+  constructor(private readonly configService: ConfigService) {}
 
+  /**
+   * Generates a TOTP secret and the corresponding URI for QR code generation.
+   * @param email The user's email, used as the account name in the URI.
+   * @returns An object containing the base32 secret and the key URI.
+   */
   generateTOTPSecret(email: string) {
-    const totp = this.createTOTP(email)
+    const secret = authenticator.generateSecret()
+    const appName = this.configService.get<string>('app.name')!
+    const uri = authenticator.keyuri(email, appName, secret)
     return {
-      secret: totp.secret.base32,
-      uri: totp.toString(),
+      secret,
+      uri,
     }
   }
 
-  verifyTOTP({ email, token, secret }: { email: string; secret: string; token: string }): boolean {
-    const totp = this.createTOTP(email, secret)
-    const delta = totp.validate({ token, window: 1 })
-    return delta !== null
+  /**
+   * Verifies a TOTP token against a secret.
+   * @param token The token from the user's authenticator app.
+   * @param secret The secret stored for the user.
+   * @returns A boolean indicating if the token is valid.
+   */
+  verifyTOTP({ token, secret }: { token: string; secret: string }): boolean {
+    return authenticator.verify({
+      token,
+      secret,
+    })
   }
 }

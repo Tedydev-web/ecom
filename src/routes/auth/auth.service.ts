@@ -1,4 +1,4 @@
-import { HttpException, Injectable } from '@nestjs/common'
+import { HttpException, Injectable, ForbiddenException, UnauthorizedException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { addMilliseconds } from 'date-fns'
 import {
@@ -38,6 +38,13 @@ import { TwoFactorService } from 'src/shared/services/2fa.service'
 import { CookieService } from 'src/shared/services/cookie.service'
 import { Response } from 'express'
 import { UserType } from 'src/shared/models/shared-user.model'
+
+interface RefreshTokenInput {
+  refreshToken: string | undefined
+  userAgent: string
+  ip: string
+  res: Response
+}
 
 @Injectable()
 export class AuthService {
@@ -126,7 +133,7 @@ export class AuthService {
       email: body.email,
       code,
       type: body.type,
-      expiresAt: addMilliseconds(new Date(), this.configService.get<number>('otp.expiresInMs')),
+      expiresAt: addMilliseconds(new Date(), this.configService.get<number>('otp.expiresInMs')!),
     })
     const { error } = await this.emailService.sendOTP({
       email: body.email,
@@ -162,7 +169,6 @@ export class AuthService {
       // Kiểm tra TOTP Code có hợp lệ hay không
       if (body.totpCode) {
         const isValid = this.twoFactorService.verifyTOTP({
-          email: user.email,
           secret: user.totpSecret,
           token: body.totpCode,
         })
@@ -224,116 +230,103 @@ export class AuthService {
     return { accessToken, refreshToken }
   }
 
-  async refreshToken({
-    refreshToken,
-    userAgent,
-    ip,
-    res,
-  }: RefreshTokenBodyType & { userAgent: string; ip: string; res: Response }) {
-    try {
-      // 1. Kiểm tra refreshToken có hợp lệ không
-      const { userId } = await this.tokenService.verifyRefreshToken(refreshToken)
-      // 2. Kiểm tra refreshToken có tồn tại trong database không
-      const refreshTokenInDb = await this.authRepository.findUniqueRefreshTokenIncludeUserRole({
-        token: refreshToken,
-      })
-      if (!refreshTokenInDb) {
-        throw RefreshTokenAlreadyUsedException
-      }
-      const {
-        deviceId,
-        user: {
-          roleId,
-          role: { name: roleName },
-        },
-      } = refreshTokenInDb
-      // 3. Cập nhật device
-      const $updateDevice = this.authRepository.updateDevice(deviceId, {
-        ip,
-        userAgent,
-      })
-      // 4. Xóa refreshToken cũ
-      const $deleteRefreshToken = this.authRepository.deleteRefreshToken({
-        token: refreshToken,
-      })
-      // 5. Tạo mới accessToken và refreshToken
-      const $tokens = this.generateTokens({ userId, roleId, roleName, deviceId })
-      const [, , tokens] = await Promise.all([$updateDevice, $deleteRefreshToken, $tokens])
-
-      // 6. Set tokens mới vào cookie
-      this.cookieService.setTokenCookies(res, tokens.accessToken, tokens.refreshToken)
-
-      // 7. Trả về thông tin user
-      const { password, totpSecret, ...userWithoutSensitiveData } = refreshTokenInDb.user
-      return userWithoutSensitiveData
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error
-      }
-      throw UnauthorizedAccessException
+  async refreshToken({ refreshToken, userAgent, ip, res }: RefreshTokenInput) {
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh token is required')
     }
+    const refreshTokenRecord = await this.authRepository.findUniqueRefreshTokenIncludeUserRole({
+      token: refreshToken,
+    })
+    if (!refreshTokenRecord) {
+      this.cookieService.clearTokenCookies(res)
+      throw new UnauthorizedException('Refresh token is invalid')
+    }
+
+    if (new Date() > refreshTokenRecord.expiresAt) {
+      await this.authRepository.deleteRefreshToken({ token: refreshToken })
+      this.cookieService.clearTokenCookies(res)
+      throw new UnauthorizedException('Refresh token has expired')
+    }
+
+    const user = refreshTokenRecord.user
+
+    if (user.status !== 'ACTIVE') {
+      this.cookieService.clearTokenCookies(res)
+      throw new ForbiddenException(`User is ${user.status}`)
+    }
+
+    let device = await this.authRepository.findUniqueDevice({
+      id: refreshTokenRecord.deviceId,
+    })
+
+    if (!device) {
+      device = await this.authRepository.createDevice({
+        userId: user.id,
+        userAgent,
+        ip,
+      })
+    } else {
+      // Cập nhật lastActive và có thể cả IP nếu cần
+      device = await this.authRepository.updateDevice(device.id, {
+        lastActive: new Date(),
+        ip,
+      })
+    }
+
+    const tokens = await this.generateTokens({
+      userId: user.id,
+      deviceId: device.id,
+      roleId: user.role.id,
+      roleName: user.role.name,
+    })
+    this.cookieService.setTokenCookies(res, tokens.accessToken, tokens.refreshToken, true) // Refresh token should always extend session
+    const { password, totpSecret, ...userWithoutSensitiveData } = user
+    return userWithoutSensitiveData
   }
 
   async logout(refreshToken: string, res: Response) {
+    if (!refreshToken) {
+      return { message: 'OK' }
+    }
     try {
-      // 1. Kiểm tra refreshToken có hợp lệ không
-      await this.tokenService.verifyRefreshToken(refreshToken)
-      // 2. Xóa refreshToken trong database
-      const deletedRefreshToken = await this.authRepository.deleteRefreshToken({
+      const refreshTokenRecord = await this.authRepository.findUniqueRefreshTokenIncludeUserRole({
         token: refreshToken,
       })
-      // 3. Cập nhật device là đã logout
-      await this.authRepository.updateDevice(deletedRefreshToken.deviceId, {
-        isActive: false,
-      })
 
-      // 4. Xóa cookies
-      this.cookieService.clearTokenCookies(res)
-
-      return { message: 'Đăng xuất thành công' }
-    } catch (error) {
-      if (isNotFoundPrismaError(error)) {
-        throw RefreshTokenAlreadyUsedException
+      if (refreshTokenRecord) {
+        await this.authRepository.deleteRefreshToken({ token: refreshToken })
+        await this.authRepository.updateDevice(refreshTokenRecord.deviceId, { isActive: false })
       }
-      throw UnauthorizedAccessException
+    } catch (error) {
+      // Do nothing, just clear cookies
+    } finally {
+      this.cookieService.clearTokenCookies(res)
+    }
+
+    return {
+      message: 'Logout successfully',
     }
   }
 
   async forgotPassword(body: ForgotPasswordBodyType) {
-    const { email, code, newPassword } = body
-    // 1. Kiểm tra email đã tồn tại trong database chưa
-    const user = await this.sharedUserRepository.findUnique({
-      email,
-    })
+    const { email } = body
+    const user = await this.sharedUserRepository.findUnique({ email })
     if (!user) {
-      throw EmailNotFoundException
+      // Don't reveal that the user does not exist
+      return { message: 'If your email is in our system, you will receive a password reset link.' }
     }
-    //2. Kiểm tra mã OTP có hợp lệ không
-    await this.validateVerificationCode({
+    const code = generateOTP()
+    await this.emailService.sendOTP({
       email,
       code,
-      type: TypeOfVerificationCode.FORGOT_PASSWORD,
     })
-    //3. Cập nhật lại mật khẩu mới và xóa đi OTP
-    const hashedPassword = await this.hashingService.hash(newPassword)
-    await Promise.all([
-      this.authRepository.updateUser(
-        { id: user.id },
-        {
-          password: hashedPassword,
-        },
-      ),
-      this.authRepository.deleteVerificationCode({
-        email_code_type: {
-          email: body.email,
-          code: body.code,
-          type: TypeOfVerificationCode.FORGOT_PASSWORD,
-        },
-      }),
-    ])
-    return {
-      message: 'Đổi mật khẩu thành công',
-    }
+    await this.authRepository.createVerificationCode({
+      email: body.email,
+      code,
+      type: TypeOfVerificationCode.FORGOT_PASSWORD,
+      expiresAt: addMilliseconds(new Date(), this.configService.get<number>('otp.expiresInMs')!),
+    })
+    return { message: 'If your email is in our system, you will receive a password reset link.' }
   }
 
   async setupTwoFactorAuth(userId: number) {
@@ -372,7 +365,6 @@ export class AuthService {
     // 2. Kiểm tra mã TOTP có hợp lệ hay không
     if (totpCode) {
       const isValid = this.twoFactorService.verifyTOTP({
-        email: user.email,
         secret: user.totpSecret,
         token: totpCode,
       })

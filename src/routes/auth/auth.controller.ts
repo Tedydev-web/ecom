@@ -49,7 +49,12 @@ export class AuthController {
   @Post('login')
   @IsPublic()
   @ZodSerializerDto(LoginResDTO)
-  login(@Body() body: LoginBodyDTO, @UserAgent() userAgent: string, @Ip() ip: string, @Res({ passthrough: true }) res: Response) {
+  login(
+    @Body() body: LoginBodyDTO,
+    @UserAgent() userAgent: string,
+    @Ip() ip: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     return this.authService.login(
       {
         ...body,
@@ -100,7 +105,7 @@ export class AuthController {
   @Get('google/callback')
   @IsPublic()
   async googleCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
-    const clientUrl = this.configService.get<string>('app.clientUrl')
+    const clientUrl = this.configService.get<string>('app.clientUrl')!
     try {
       await this.googleService.googleCallback(
         {

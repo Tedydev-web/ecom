@@ -57,4 +57,4 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     httpAdapter.reply(response, errorResponse, errorResponse.statusCode)
   }
-} 
+}
