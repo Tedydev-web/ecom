@@ -1,0 +1,102 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Standard Code of Conduct for Backend Tech Lead – NestJS in E-commerce Platform
+
+Always respond in Vietnamese
+
+1. Codebase Review & Assessment
+Always thoroughly read the entire codebase before starting any task.
+
+Analyze the overall architecture, identify strengths and weaknesses, detect duplicated code, security vulnerabilities, and performance bottlenecks.
+
+Ask critical questions and deeply investigate issues to find the most optimal solutions.
+
+2. Naming & Conventions
+Apply best naming conventions for all files, folders, classes, variables, and methods.
+
+Apply the best naming conventions for all files, folders, classes, variables, and methods.
+Strictly adhere to separation rules: model, repository, DTO, controller, and service must be clearly separated, each adhering to the Single Responsibility Principle (SRP, DRY).
+Additions:
+Model: Defines only the data structure (typically via Prisma schema). Contains no logic for mapping, validation, or business rules.
+Repository: Handles only database operations (CRUD). Contains no business logic or DTO mapping.
+DTO: Defines and validates API input/output data using Zod. Contains no business logic.
+Service: Handles business logic, calls Repository, generates IDs (e.g., Snowflake ID), and maps models to DTOs.
+Controller: Handles only HTTP request/response, validates input/output with DTOs, and contains no business logic.
+
+All reusable or shared components (helpers, constants, configs, middleware, pipes, interceptors, errors, utils, etc.) must be placed in src/shared.
+
+3. Architecture & Clean Code
+Strictly follow Clean Architecture principles, write clean code, avoid code duplication and logic repetition.
+
+All components must be explicit, clear, readable, and maintainable.
+
+Separate layers: model, repository, DTO, controller, service.
+
+Avoid hardcoding any values, especially error messages – centrally manage them via .error.ts files or environment variables.
+
+4. Best Practices & Optimization
+Always apply the best industry practices and the most optimal solutions for every problem.
+
+Proactively evaluate risks (security, performance, maintainability) before and after task execution.
+
+Automate checks by running npm run build or npm run start after completing each task.
+
+5. Validation, Multilingual Support & Configuration
+Validation:
+Always use Zod for data validation at all layers:
+Controller: Validate input (query, params, body) using DTOs.
+Service: Validate data before processing business logic (if needed).
+Repository: Accept only pre-validated data from Services, no validation logic.
+Each DTO must have a corresponding Zod schema in a *.schema.ts file (e.g., user.schema.ts).
+
+Multilingual: Use nestjs-i18n for all response messages.
+
+Each module/controller has its own .json file in src/i18n for translations.
+
+Common errors are placed in src/i18n/vi/global.json.
+
+Configuration: All configurable values (API keys, limits, timeouts, messages, etc.) must be sourced from environment variables and managed via src/shared/config.ts.
+
+6. Error Management & Logging
+Do not hardcode error messages; always manage them centrally via .error.ts or environment variables.
+
+Log errors and important events using Winston or Pino, with optional centralized logging integration.
+
+7. Reusability & Sharing
+All reusable components (helpers, constants, middleware, pipes, interceptors, errors, configs, utils, etc.) must be placed in src/shared for system-wide use.
+
+8. Workflow & Continuous Improvement
+When receiving a task, always question, analyze deeply, and find the best, most optimal, and detailed solutions.
+
+Ensure all changes comply with established rules.
+
+After completion, automatically check for errors and results via build/tests and review the entire process.
+
+9. Summary
+Strictly adhere to all the above rules.
+
+Prioritize quality, security, performance, scalability, and long-term maintainability.
+
+All decisions must be based on best practices, practical experience, and tailored to the specifics of e-commerce platforms.
+
+10. Thorough Evaluation Before Creating New Components
+Before creating any new file, method, or endpoint, conduct a thorough analysis and evaluation:
+
+Clearly identify the actual need: Is this functionality truly necessary for the system?
+
+Analyze reusability: Check if existing components, logic, endpoints, or files in the codebase can be reused.
+
+Prioritize leveraging existing assets: If possible to extend, modify, or reuse, always prefer this over creating new ones.
+
+Create new only when necessary: Only create new components when reuse or extension of existing ones is not feasible.
+
+Always choose the standard solution: Ensure all decisions are based on best practices, industry standards, and fit the overall system architecture.
+
+Note: Creating new components must be accompanied by risk analysis and assessment of impacts on architecture, performance, maintainability, and scalability.
+
+In summary:
+Every decision to create new files, methods, or endpoints must be carefully considered for necessity, reusability, and always prioritize the most standard and optimal solution for the entire system.
+This rule helps minimize duplication and waste, keeping the codebase clean, maintainable, and sustainably developed.
