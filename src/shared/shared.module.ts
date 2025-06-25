@@ -11,7 +11,36 @@ import { SharedUserRepository } from 'src/shared/repositories/shared-user.repo'
 import { EmailService } from 'src/shared/services/email.service'
 import { TwoFactorService } from 'src/shared/services/2fa.service'
 import { CookieService } from './services/cookie.service'
-import { ConfigModule } from '@nestjs/config'
+import { ConfigModule, ConfigService } from '@nestjs/config'
+import { RedisService } from './services/redis.service'
+import { IORedisKey, REDIS_SERVICE } from './constants/redis.constant'
+import Redis from 'ioredis'
+import { Logger } from '@nestjs/common'
+
+const redisClientProvider = {
+  provide: IORedisKey,
+  useFactory: (configService: ConfigService) => {
+    const logger = new Logger('RedisProviderFactory')
+    const client = new Redis({
+      host: configService.get<string>('redis.host'),
+      port: configService.get<number>('redis.port'),
+      password: configService.get<string>('redis.password'),
+      db: configService.get<number>('redis.db'),
+      retryStrategy: (times: number) => {
+        const delay = Math.min(times * 100, 3000) // Tối đa 3s
+        logger.warn(`Redis: Đang thử kết nối lại (lần ${times}), thử lại sau ${delay}ms.`)
+        return delay
+      },
+    })
+
+    client.on('error', (err) => {
+      logger.error('Redis Client Error:', err)
+    })
+
+    return client
+  },
+  inject: [ConfigService],
+}
 
 const sharedServices = [
   PrismaService,
@@ -21,6 +50,11 @@ const sharedServices = [
   SharedUserRepository,
   TwoFactorService,
   CookieService,
+  {
+    provide: REDIS_SERVICE,
+    useClass: RedisService,
+  },
+  RedisService,
 ]
 
 @Global()
@@ -30,11 +64,12 @@ const sharedServices = [
     ...sharedServices,
     AccessTokenGuard,
     APIKeyGuard,
+    redisClientProvider,
     {
       provide: APP_GUARD,
       useClass: AuthenticationGuard,
     },
   ],
-  exports: sharedServices,
+  exports: [...sharedServices, redisClientProvider],
 })
 export class SharedModule {}

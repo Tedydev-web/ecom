@@ -57,6 +57,13 @@ const ResendConfigSchema = z.object({
   RESEND_API_KEY: z.string(),
 })
 
+const RedisConfigSchema = z.object({
+  REDIS_HOST: z.string().default('localhost'),
+  REDIS_PORT: z.coerce.number().int().positive().default(6379),
+  REDIS_PASSWORD: z.string().optional(),
+  REDIS_DB: z.coerce.number().int().default(0),
+})
+
 const RootConfigSchema = AppConfigSchema.merge(JWTConfigSchema)
   .merge(CookieConfigSchema)
   .merge(DatabaseConfigSchema)
@@ -65,6 +72,7 @@ const RootConfigSchema = AppConfigSchema.merge(JWTConfigSchema)
   .merge(AdminConfigSchema)
   .merge(ResendConfigSchema)
   .merge(CsrfConfigSchema)
+  .merge(RedisConfigSchema)
 
 const validatedConfig = RootConfigSchema.parse(process.env)
 
@@ -131,5 +139,12 @@ export const resend = registerAs('resend', () => ({
   apiKey: validatedConfig.RESEND_API_KEY,
 }))
 
+export const redis = registerAs('redis', () => ({
+  host: validatedConfig.REDIS_HOST,
+  port: validatedConfig.REDIS_PORT,
+  password: validatedConfig.REDIS_PASSWORD,
+  db: validatedConfig.REDIS_DB,
+}))
+
 // Export a single object to be loaded in AppModule
-export default [app, jwt, cookie, google, otp, database, resend, csrf]
+export default [app, jwt, cookie, google, otp, database, resend, csrf, redis]
