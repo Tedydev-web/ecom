@@ -1,3 +1,3 @@
-import { NotFoundException } from '@nestjs/common'
+import { GlobalError } from './global.error'
 
-export const NotFoundRecordException = new NotFoundException('Error.NotFound')
+export const NotFoundRecordException = (entity: string = 'record') => GlobalError.NotFound(entity)

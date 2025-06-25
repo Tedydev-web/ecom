@@ -1,0 +1,11 @@
+{
+  "success": {
+    "CREATE_SUCCESS": "Tạo ngôn ngữ thành công",
+    "UPDATE_SUCCESS": "Cập nhật ngôn ngữ thành công.",
+    "DELETE_SUCCESS": "Xóa ngôn ngữ thành công."
+  },
+  "error": {
+    "NOT_FOUND": "Không tìm thấy ngôn ngữ",
+    "ALREADY_EXISTS": "Ngôn ngữ này đã tồn tại."
+  }
+}

@@ -1,7 +1,9 @@
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus, Logger } from '@nestjs/common'
 import { HttpAdapterHost } from '@nestjs/core'
+import { I18nService, I18nValidationException } from 'nestjs-i18n'
 import { ApiException } from 'src/shared/exceptions/api.exception'
 import { Response } from 'express'
+import { I18nTranslations } from 'src/generated/i18n.generated'
 
 interface IErrorResponse {
   statusCode: number
@@ -14,7 +16,10 @@ interface IErrorResponse {
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name)
 
-  constructor(private readonly httpAdapterHost: HttpAdapterHost) {}
+  constructor(
+    private readonly httpAdapterHost: HttpAdapterHost,
+    private readonly i18n: I18nService<I18nTranslations>,
+  ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const { httpAdapter } = this.httpAdapterHost
@@ -28,7 +33,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
       errorResponse = {
         statusCode: exception.getStatus(),
         code: exception.code,
-        message: exception.message, // This would be the i18n key
+        message: this.i18n.t(exception.message as any, {
+          lang: ctx.getRequest().i18nLang,
+          args: exception.details,
+        }),
         details: exception.details,
       }
     } else if (exception instanceof HttpException) {

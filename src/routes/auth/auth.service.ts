@@ -38,6 +38,7 @@ import { TwoFactorService } from 'src/shared/services/2fa.service'
 import { CookieService } from 'src/shared/services/cookie.service'
 import { Response } from 'express'
 import { UserType } from 'src/shared/models/shared-user.model'
+import { GlobalError } from 'src/shared/global.error'
 
 interface RefreshTokenInput {
   refreshToken: string | undefined
@@ -142,7 +143,7 @@ export class AuthService {
     if (error) {
       throw FailedToSendOTPException
     }
-    return { message: 'Gửi mã OTP thành công' }
+    return { message: 'auth.success.OTP_SENT' }
   }
 
   async login(body: LoginBodyType & { userAgent: string; ip: string }, res: Response) {
@@ -232,27 +233,27 @@ export class AuthService {
 
   async refreshToken({ refreshToken, userAgent, ip, res }: RefreshTokenInput) {
     if (!refreshToken) {
-      throw new UnauthorizedException('Refresh token is required')
+      throw GlobalError.Unauthorized('auth.error.REFRESH_TOKEN_REQUIRED')
     }
     const refreshTokenRecord = await this.authRepository.findUniqueRefreshTokenIncludeUserRole({
       token: refreshToken,
     })
     if (!refreshTokenRecord) {
       this.cookieService.clearTokenCookies(res)
-      throw new UnauthorizedException('Refresh token is invalid')
+      throw GlobalError.Unauthorized('auth.error.REFRESH_TOKEN_INVALID')
     }
 
     if (new Date() > refreshTokenRecord.expiresAt) {
       await this.authRepository.deleteRefreshToken({ token: refreshToken })
       this.cookieService.clearTokenCookies(res)
-      throw new UnauthorizedException('Refresh token has expired')
+      throw GlobalError.Unauthorized('auth.error.REFRESH_TOKEN_EXPIRED')
     }
 
     const user = refreshTokenRecord.user
 
     if (user.status !== 'ACTIVE') {
       this.cookieService.clearTokenCookies(res)
-      throw new ForbiddenException(`User is ${user.status}`)
+      throw GlobalError.Forbidden('auth.error.USER_INACTIVE', { status: user.status })
     }
 
     let device = await this.authRepository.findUniqueDevice({
@@ -285,26 +286,23 @@ export class AuthService {
   }
 
   async logout(refreshToken: string, res: Response) {
-    if (!refreshToken) {
-      return { message: 'OK' }
-    }
-    try {
-      const refreshTokenRecord = await this.authRepository.findUniqueRefreshTokenIncludeUserRole({
-        token: refreshToken,
-      })
+    if (refreshToken) {
+      try {
+        const refreshTokenRecord = await this.authRepository.findUniqueRefreshTokenIncludeUserRole({
+          token: refreshToken,
+        })
 
-      if (refreshTokenRecord) {
-        await this.authRepository.deleteRefreshToken({ token: refreshToken })
-        await this.authRepository.updateDevice(refreshTokenRecord.deviceId, { isActive: false })
+        if (refreshTokenRecord) {
+          await this.authRepository.deleteRefreshToken({ token: refreshToken })
+          await this.authRepository.updateDevice(refreshTokenRecord.deviceId, { isActive: false })
+        }
+      } catch (error) {
+        // Do nothing, just clear cookies
       }
-    } catch (error) {
-      // Do nothing, just clear cookies
-    } finally {
-      this.cookieService.clearTokenCookies(res)
     }
-
+    this.cookieService.clearTokenCookies(res)
     return {
-      message: 'Logout successfully',
+      message: 'auth.success.LOGOUT_SUCCESS',
     }
   }
 
@@ -313,7 +311,7 @@ export class AuthService {
     const user = await this.sharedUserRepository.findUnique({ email })
     if (!user) {
       // Don't reveal that the user does not exist
-      return { message: 'If your email is in our system, you will receive a password reset link.' }
+      return { message: 'auth.success.FORGOT_PASSWORD_SENT' }
     }
     const code = generateOTP()
     await this.emailService.sendOTP({
@@ -326,7 +324,7 @@ export class AuthService {
       type: TypeOfVerificationCode.FORGOT_PASSWORD,
       expiresAt: addMilliseconds(new Date(), this.configService.get<number>('otp.expiresInMs')!),
     })
-    return { message: 'If your email is in our system, you will receive a password reset link.' }
+    return { message: 'auth.success.FORGOT_PASSWORD_SENT' }
   }
 
   async setupTwoFactorAuth(userId: number) {
@@ -385,7 +383,7 @@ export class AuthService {
 
     // 5. Trả về thông báo
     return {
-      message: 'Tắt 2FA thành công',
+      message: 'auth.success.DISABLE_2FA_SUCCESS',
     }
   }
 }

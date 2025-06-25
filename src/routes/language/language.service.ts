@@ -20,7 +20,7 @@ export class LanguageService {
   async findById(id: string) {
     const language = await this.languageRepo.findById(id)
     if (!language) {
-      throw NotFoundRecordException
+      throw NotFoundRecordException('language')
     }
     return language
   }
@@ -49,7 +49,7 @@ export class LanguageService {
       return language
     } catch (error) {
       if (isNotFoundPrismaError(error)) {
-        throw NotFoundRecordException
+        throw NotFoundRecordException('language')
       }
       throw error
     }
@@ -60,11 +60,11 @@ export class LanguageService {
       // hard delete
       await this.languageRepo.delete(id, true)
       return {
-        message: 'Delete successfully',
+        message: 'language.success.DELETE_SUCCESS',
       }
     } catch (error) {
       if (isNotFoundPrismaError(error)) {
-        throw NotFoundRecordException
+        throw NotFoundRecordException('language')
       }
       throw error
     }
