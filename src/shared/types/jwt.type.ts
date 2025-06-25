@@ -6,6 +6,7 @@ export interface AccessTokenPayloadCreate {
 }
 
 export interface AccessTokenPayload extends AccessTokenPayloadCreate {
+  jti: string
   exp: number
   iat: number
 }
@@ -15,6 +16,7 @@ export interface RefreshTokenPayloadCreate {
 }
 
 export interface RefreshTokenPayload extends RefreshTokenPayloadCreate {
+  jti: string
   exp: number
   iat: number
 }

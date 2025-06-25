@@ -1,4 +1,4 @@
-import { HttpException, Injectable, ForbiddenException, UnauthorizedException } from '@nestjs/common'
+import { HttpException, Injectable, ForbiddenException, UnauthorizedException, HttpStatus } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { addMilliseconds } from 'date-fns'
 import {
@@ -39,6 +39,7 @@ import { CookieService } from 'src/shared/services/cookie.service'
 import { Response } from 'express'
 import { UserType } from 'src/shared/models/shared-user.model'
 import { GlobalError } from 'src/shared/global.error'
+import { SessionService } from 'src/shared/services/session.service'
 
 interface RefreshTokenInput {
   refreshToken: string | undefined
@@ -59,6 +60,7 @@ export class AuthService {
     private readonly twoFactorService: TwoFactorService,
     private readonly cookieService: CookieService,
     private readonly configService: ConfigService,
+    private readonly sessionService: SessionService,
   ) {}
 
   async validateVerificationCode({
@@ -235,26 +237,33 @@ export class AuthService {
     if (!refreshToken) {
       throw GlobalError.Unauthorized('auth.error.REFRESH_TOKEN_REQUIRED')
     }
+    const { jti, exp } = await this.tokenService.verifyRefreshToken(refreshToken).catch(() => {
+      throw GlobalError.Unauthorized('auth.error.INVALID_REFRESH_TOKEN')
+    })
+
+    const isUsed = await this.sessionService.isRefreshTokenUsed(jti)
+    if (isUsed) {
+      // TODO: Đây là một sự kiện bảo mật nghiêm trọng, cần có hành động mạnh hơn
+      // như thu hồi tất cả các phiên của user.
+      throw GlobalError.Forbidden('auth.error.REFRESH_TOKEN_REUSED')
+    }
+
     const refreshTokenRecord = await this.authRepository.findUniqueRefreshTokenIncludeUserRole({
       token: refreshToken,
     })
+
     if (!refreshTokenRecord) {
       this.cookieService.clearTokenCookies(res)
-      throw GlobalError.Unauthorized('auth.error.REFRESH_TOKEN_INVALID')
+      throw GlobalError.Unauthorized('auth.error.REFRESH_TOKEN_NOT_FOUND_IN_DB')
     }
 
-    if (new Date() > refreshTokenRecord.expiresAt) {
-      await this.authRepository.deleteRefreshToken({ token: refreshToken })
+    if (refreshTokenRecord.user.status !== 'ACTIVE') {
       this.cookieService.clearTokenCookies(res)
-      throw GlobalError.Unauthorized('auth.error.REFRESH_TOKEN_EXPIRED')
+      throw GlobalError.Forbidden('auth.error.USER_NOT_ACTIVE')
     }
 
-    const user = refreshTokenRecord.user
-
-    if (user.status !== 'ACTIVE') {
-      this.cookieService.clearTokenCookies(res)
-      throw GlobalError.Forbidden('auth.error.USER_INACTIVE', { status: user.status })
-    }
+    // Đánh dấu RT cũ là đã sử dụng
+    await this.sessionService.markRefreshTokenAsUsed(jti)
 
     let device = await this.authRepository.findUniqueDevice({
       id: refreshTokenRecord.deviceId,
@@ -262,7 +271,7 @@ export class AuthService {
 
     if (!device) {
       device = await this.authRepository.createDevice({
-        userId: user.id,
+        userId: refreshTokenRecord.user.id,
         userAgent,
         ip,
       })
@@ -275,35 +284,34 @@ export class AuthService {
     }
 
     const tokens = await this.generateTokens({
-      userId: user.id,
+      userId: refreshTokenRecord.user.id,
       deviceId: device.id,
-      roleId: user.role.id,
-      roleName: user.role.name,
+      roleId: refreshTokenRecord.user.role.id,
+      roleName: refreshTokenRecord.user.role.name,
     })
     this.cookieService.setTokenCookies(res, tokens.accessToken, tokens.refreshToken, true) // Refresh token should always extend session
-    const { password, totpSecret, ...userWithoutSensitiveData } = user
+    const { password, totpSecret, ...userWithoutSensitiveData } = refreshTokenRecord.user
+    res.status(HttpStatus.OK).send({ message: 'auth.success.REFRESH_TOKEN_SUCCESS' })
     return userWithoutSensitiveData
   }
 
   async logout(refreshToken: string, res: Response) {
-    if (refreshToken) {
-      try {
-        const refreshTokenRecord = await this.authRepository.findUniqueRefreshTokenIncludeUserRole({
-          token: refreshToken,
-        })
+    if (!refreshToken) {
+      return { message: 'auth.success.LOGOUT_SUCCESS' }
+    }
+    try {
+      const { jti, exp } = await this.tokenService.verifyRefreshToken(refreshToken)
+      const remainingTime = exp - Math.floor(Date.now() / 1000)
 
-        if (refreshTokenRecord) {
-          await this.authRepository.deleteRefreshToken({ token: refreshToken })
-          await this.authRepository.updateDevice(refreshTokenRecord.deviceId, { isActive: false })
-        }
-      } catch (error) {
-        // Do nothing, just clear cookies
-      }
+      await this.sessionService.addToBlacklist(jti, remainingTime)
+      await this.authRepository.deleteRefreshToken({ token: refreshToken })
+    } catch (error) {
+      // Bỏ qua lỗi nếu token không hợp lệ, vì mục tiêu là đăng xuất
+    } finally {
+      this.cookieService.clearTokenCookies(res)
     }
-    this.cookieService.clearTokenCookies(res)
-    return {
-      message: 'auth.success.LOGOUT_SUCCESS',
-    }
+
+    return { message: 'auth.success.LOGOUT_SUCCESS' }
   }
 
   async forgotPassword(body: ForgotPasswordBodyType) {

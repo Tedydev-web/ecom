@@ -11,6 +11,7 @@ export type I18nTranslations = {
             "LOGOUT_SUCCESS": string;
             "FORGOT_PASSWORD_SENT": string;
             "DISABLE_2FA_SUCCESS": string;
+            "REFRESH_TOKEN_SUCCESS": string;
         };
         "error": {
             "INVALID_OTP": string;
@@ -27,9 +28,13 @@ export type I18nTranslations = {
             "TOTP_NOT_ENABLED": string;
             "INVALID_TOTP_AND_CODE": string;
             "REFRESH_TOKEN_REQUIRED": string;
-            "REFRESH_TOKEN_INVALID": string;
             "REFRESH_TOKEN_EXPIRED": string;
+            "REFRESH_TOKEN_INVALID": string;
             "USER_INACTIVE": string;
+            "USER_NOT_ACTIVE": string;
+            "INVALID_REFRESH_TOKEN": string;
+            "REFRESH_TOKEN_REUSED": string;
+            "REFRESH_TOKEN_NOT_FOUND_IN_DB": string;
         };
     };
     "global": {

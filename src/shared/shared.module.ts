@@ -12,10 +12,12 @@ import { EmailService } from 'src/shared/services/email.service'
 import { TwoFactorService } from 'src/shared/services/2fa.service'
 import { CookieService } from './services/cookie.service'
 import { ConfigModule, ConfigService } from '@nestjs/config'
-import { RedisService } from './services/redis.service'
-import { IORedisKey, REDIS_SERVICE } from './constants/redis.constant'
+import { RedisService } from './providers/redis/redis.service'
+import { IORedisKey, REDIS_SERVICE } from './providers/redis/redis.constants'
 import Redis from 'ioredis'
 import { Logger } from '@nestjs/common'
+import { CryptoService } from './services/crypto.service'
+import { SessionService } from './services/session.service'
 
 const redisClientProvider = {
   provide: IORedisKey,
@@ -50,11 +52,12 @@ const sharedServices = [
   SharedUserRepository,
   TwoFactorService,
   CookieService,
+  CryptoService,
+  SessionService,
   {
     provide: REDIS_SERVICE,
     useClass: RedisService,
   },
-  RedisService,
 ]
 
 @Global()
@@ -70,6 +73,6 @@ const sharedServices = [
       useClass: AuthenticationGuard,
     },
   ],
-  exports: [...sharedServices, redisClientProvider],
+  exports: [...sharedServices],
 })
 export class SharedModule {}

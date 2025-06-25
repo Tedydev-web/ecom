@@ -18,7 +18,7 @@ export class TokenService {
 
   signAccessToken(payload: AccessTokenPayloadCreate) {
     return this.jwtService.sign(
-      { ...payload, uuid: uuidv4() },
+      { ...payload, jti: uuidv4() },
       {
         secret: this.configService.get<string>('jwt.accessToken.secret'),
         expiresIn: this.configService.get<string>('jwt.accessToken.expiresIn'),
@@ -29,7 +29,7 @@ export class TokenService {
 
   signRefreshToken(payload: RefreshTokenPayloadCreate) {
     return this.jwtService.sign(
-      { ...payload, uuid: uuidv4() },
+      { ...payload, jti: uuidv4() },
       {
         secret: this.configService.get<string>('jwt.refreshToken.secret'),
         expiresIn: this.configService.get<string>('jwt.refreshToken.expiresIn'),
