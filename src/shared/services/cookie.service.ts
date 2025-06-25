@@ -8,6 +8,7 @@ export class CookieService {
   private readonly logger = new Logger(CookieService.name)
   private readonly accessTokenCookieName: string = CookieNames.ACCESS_TOKEN
   private readonly refreshTokenCookieName: string = CookieNames.REFRESH_TOKEN
+  private readonly csrfCookieName: string = CookieNames.CSRF_TOKEN
   private readonly baseOptions: Omit<CookieOptions, 'maxAge'>
 
   constructor(private readonly configService: ConfigService) {
@@ -28,6 +29,14 @@ export class CookieService {
     res.clearCookie(name, {
       path: this.baseOptions.path,
       domain: this.baseOptions.domain,
+    })
+  }
+
+  setCsrfCookie(res: Response, csrfToken: string): void {
+    this.setCookie(res, this.csrfCookieName, csrfToken, {
+      ...this.baseOptions,
+      httpOnly: false,
+      maxAge: this.configService.get<number>('cookie.refreshTokenMaxAge'),
     })
   }
 
@@ -55,6 +64,10 @@ export class CookieService {
 
   clearRefreshTokenCookie(res: Response): void {
     this.clearCookie(res, this.refreshTokenCookieName)
+  }
+
+  clearCsrfCookie(res: Response): void {
+    this.clearCookie(res, this.csrfCookieName)
   }
 
   setTokenCookies(res: Response, accessToken: string, refreshToken: string, rememberMe: boolean = false): void {

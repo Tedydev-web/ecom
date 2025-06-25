@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common'
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common'
 import { AppController } from './app.controller'
 import { AppService } from './app.service'
 import { SharedModule } from 'src/shared/shared.module'
@@ -10,6 +10,7 @@ import { AllExceptionsFilter } from 'src/shared/filters/all-exceptions.filter'
 import { LanguageModule } from 'src/routes/language/language.module'
 import { ConfigModule } from '@nestjs/config'
 import config from 'src/shared/config'
+import { CsrfProtectionMiddleware } from 'src/shared/middleware/csrf.middleware'
 
 @Module({
   imports: [
@@ -36,4 +37,8 @@ import config from 'src/shared/config'
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CsrfProtectionMiddleware).forRoutes('*')
+  }
+}

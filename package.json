@@ -33,6 +33,7 @@
     "@react-email/components": "0.0.33",
     "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.7",
+    "csurf": "^1.11.0",
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.7",
     "googleapis": "^146.0.0",

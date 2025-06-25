@@ -16,6 +16,11 @@ const AppConfigSchema = z.object({
   EMAIL_FROM: z.string().email().default('noreply@shopsifu.com'),
 })
 
+const CsrfConfigSchema = z.object({
+  CSRF_SECRET_LENGTH: z.coerce.number().int().positive().default(32),
+  CSRF_HEADER_NAME: z.string().default('x-csrf-token'),
+})
+
 const JWTConfigSchema = z.object({
   ACCESS_TOKEN_SECRET: z.string(),
   ACCESS_TOKEN_EXPIRES_IN: z.string().default('15m'),
@@ -59,6 +64,7 @@ const RootConfigSchema = AppConfigSchema.merge(JWTConfigSchema)
   .merge(OTPConfigSchema)
   .merge(AdminConfigSchema)
   .merge(ResendConfigSchema)
+  .merge(CsrfConfigSchema)
 
 const validatedConfig = RootConfigSchema.parse(process.env)
 
@@ -72,6 +78,11 @@ export const app = registerAs('app', () => ({
   apiKey: validatedConfig.API_KEY,
   clientUrl: validatedConfig.CLIENT_URL,
   emailFrom: validatedConfig.EMAIL_FROM,
+}))
+
+export const csrf = registerAs('csrf', () => ({
+  secretLength: validatedConfig.CSRF_SECRET_LENGTH,
+  headerName: validatedConfig.CSRF_HEADER_NAME,
 }))
 
 export const jwt = registerAs('jwt', () => ({
@@ -121,4 +132,4 @@ export const resend = registerAs('resend', () => ({
 }))
 
 // Export a single object to be loaded in AppModule
-export default [app, jwt, cookie, google, otp, database, resend]
+export default [app, jwt, cookie, google, otp, database, resend, csrf]
