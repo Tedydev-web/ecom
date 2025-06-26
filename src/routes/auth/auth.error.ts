@@ -1,74 +1,32 @@
 import { GlobalError } from 'src/shared/global.error'
 
-// OTP related errors
-export const InvalidOTPException = GlobalError.UnprocessableEntity('auth.error.INVALID_OTP', [
-  {
-    path: 'code',
-  },
-])
+export const AuthError = {
+  EmailAlreadyExists: GlobalError.BadRequest('auth.error.EMAIL_ALREADY_EXISTS'),
+  EmailNotFound: GlobalError.NotFound('user', { message: 'auth.error.EMAIL_NOT_FOUND' }),
+  InvalidPassword: GlobalError.Unauthorized('auth.error.INVALID_PASSWORD'),
 
-export const OTPExpiredException = GlobalError.UnprocessableEntity('auth.error.OTP_EXPIRED', [
-  {
-    path: 'code',
-  },
-])
+  // OTP Errors
+  InvalidOTP: GlobalError.BadRequest('auth.error.INVALID_OTP'),
+  OTPExpired: GlobalError.BadRequest('auth.error.OTP_EXPIRED'),
+  FailedToSendOTP: GlobalError.InternalServerError('auth.error.FAILED_TO_SEND_OTP'),
 
-export const FailedToSendOTPException = GlobalError.UnprocessableEntity('auth.error.FAILED_TO_SEND_OTP', [
-  {
-    path: 'code',
-  },
-])
+  // 2FA/TOTP Errors
+  InvalidTOTP: GlobalError.BadRequest('auth.error.INVALID_TOTP'),
+  InvalidTOTPAndCode: GlobalError.BadRequest('auth.error.INVALID_TOTP_AND_CODE'),
+  TOTPAlreadyEnabled: GlobalError.BadRequest('auth.error.TOTP_ALREADY_ENABLED'),
+  TOTPNotEnabled: GlobalError.BadRequest('auth.error.TOTP_NOT_ENABLED'),
+  Disable2FARequiresCode: GlobalError.BadRequest('auth.error.DISABLE_2FA_REQUIRES_CODE'),
 
-// Email related errors
-export const EmailAlreadyExistsException = GlobalError.UnprocessableEntity('auth.error.EMAIL_ALREADY_EXISTS', [
-  {
-    path: 'email',
-  },
-])
+  // Token Errors
+  RefreshTokenRequired: GlobalError.Unauthorized('auth.error.REFRESH_TOKEN_REQUIRED'),
+  InvalidRefreshToken: GlobalError.Unauthorized('auth.error.INVALID_REFRESH_TOKEN'),
+  RefreshTokenReused: GlobalError.Forbidden('auth.error.REFRESH_TOKEN_REUSED'),
 
-export const EmailNotFoundException = GlobalError.UnprocessableEntity('auth.error.EMAIL_NOT_FOUND', [
-  {
-    path: 'email',
-  },
-])
+  // General Auth Errors
+  UserNotFound: GlobalError.NotFound('user', { message: 'auth.error.USER_NOT_FOUND' }),
+  UserNotActive: GlobalError.Forbidden('auth.error.USER_NOT_ACTIVE'),
 
-// Password related errors
-export const InvalidPasswordException = GlobalError.UnprocessableEntity('auth.error.INVALID_PASSWORD', [
-  {
-    path: 'password',
-  },
-])
-
-// Auth token related errors
-export const RefreshTokenAlreadyUsedException = GlobalError.Unauthorized('auth.error.REFRESH_TOKEN_ALREADY_USED')
-export const UnauthorizedAccessException = GlobalError.Unauthorized('auth.error.UNAUTHORIZED_ACCESS')
-
-// Google auth related errors
-export const GoogleUserInfoError = GlobalError.InternalServerError('auth.error.FAILED_TO_GET_GOOGLE_USER_INFO')
-
-export const InvalidTOTPException = GlobalError.UnprocessableEntity('auth.error.INVALID_TOTP', [
-  {
-    path: 'totpCode',
-  },
-])
-
-export const TOTPAlreadyEnabledException = GlobalError.UnprocessableEntity('auth.error.TOTP_ALREADY_ENABLED', [
-  {
-    path: 'totpCode',
-  },
-])
-
-export const TOTPNotEnabledException = GlobalError.UnprocessableEntity('auth.error.TOTP_NOT_ENABLED', [
-  {
-    path: 'totpCode',
-  },
-])
-
-export const InvalidTOTPAndCodeException = GlobalError.UnprocessableEntity('auth.error.INVALID_TOTP_AND_CODE', [
-  {
-    path: 'totpCode',
-  },
-  {
-    path: 'code',
-  },
-])
+  // Google OAuth Errors
+  GoogleUserInfoError: GlobalError.InternalServerError('auth.error.GOOGLE_USER_INFO_ERROR'),
+  InvalidCsrfToken: GlobalError.Forbidden('auth.error.INVALID_CSRF_TOKEN'),
+}

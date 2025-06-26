@@ -1,20 +1,23 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { Response } from 'express'
 import { OAuth2Client } from 'google-auth-library'
 import { google } from 'googleapis'
+import { AuthError } from 'src/routes/auth/auth.error'
 import { GoogleAuthStateType } from 'src/routes/auth/auth.model'
 import { AuthRepository } from 'src/routes/auth/auth.repo'
 import { AuthService } from 'src/routes/auth/auth.service'
-import { GoogleUserInfoError } from 'src/routes/auth/auth.error'
 import { RolesService } from 'src/routes/auth/roles.service'
+import { CookieService } from 'src/shared/services/cookie.service'
 import { HashingService } from 'src/shared/services/hashing.service'
 import { v4 as uuidv4 } from 'uuid'
-import { Response } from 'express'
-import { CookieService } from 'src/shared/services/cookie.service'
 
 @Injectable()
 export class GoogleService {
   private oauth2Client: OAuth2Client
+  private readonly logger = new Logger(GoogleService.name)
+  private readonly clientUrl: string
+
   constructor(
     private readonly authRepository: AuthRepository,
     private readonly hashingService: HashingService,
@@ -28,6 +31,7 @@ export class GoogleService {
       this.configService.get<string>('google.clientSecret'),
       this.configService.get<string>('google.redirectUri'),
     )
+    this.clientUrl = this.configService.get<string>('app.clientUrl')!
   }
   getAuthorizationUrl({ userAgent, ip }: GoogleAuthStateType) {
     const scope = ['https://www.googleapis.com/auth/userinfo.profile', 'https://www.googleapis.com/auth/userinfo.email']
@@ -46,19 +50,11 @@ export class GoogleService {
     })
     return { url }
   }
-  async googleCallback(
-    { code, state }: { code: string; state: string },
-    res: Response,
-  ): Promise<
-    Omit<
-      import('/Users/tedydev/Workspace/Codespaces/GitHub/Shopsifu/server-main/src/shared/models/shared-user.model').UserType,
-      'password' | 'totpSecret'
-    >
-  > {
+  async googleCallback({ code, state }: { code: string; state: string }, res: Response): Promise<void> {
     try {
       let userAgent = 'Unknown'
       let ip = 'Unknown'
-      // 1. Lấy state từ url
+      // 1. Lấy state từ url an toàn
       try {
         if (state) {
           const clientInfo = JSON.parse(Buffer.from(state, 'base64').toString()) as GoogleAuthStateType
@@ -66,7 +62,7 @@ export class GoogleService {
           ip = clientInfo.ip
         }
       } catch (error) {
-        console.error('Error parsing state', error)
+        this.logger.warn('Failed to parse state from Google OAuth callback', error)
       }
       // 2. Dùng code để lấy token
       const { tokens } = await this.oauth2Client.getToken(code)
@@ -79,7 +75,7 @@ export class GoogleService {
       })
       const { data } = await oauth2.userinfo.get()
       if (!data.email) {
-        throw GoogleUserInfoError
+        throw AuthError.GoogleUserInfoError
       }
 
       let user = await this.authRepository.findUniqueUserIncludeRole({
@@ -111,11 +107,16 @@ export class GoogleService {
         roleName: user.role.name,
       })
       this.cookieService.setTokenCookies(res, accessToken, refreshToken)
-      const { password, totpSecret, ...userWithoutSensitiveData } = user
-      return userWithoutSensitiveData
+
+      res.redirect(this.clientUrl)
     } catch (error) {
-      console.error('Error in googleCallback', error)
-      throw error
+      this.logger.error('Error in googleCallback', error)
+      if (error instanceof Error && 'code' in error && error.code === 'E400') {
+        // Handle specific Google API errors if needed
+        throw AuthError.GoogleUserInfoError
+      }
+      // Re-throw our standardized error for consistent client response
+      throw AuthError.GoogleUserInfoError
     }
   }
 }

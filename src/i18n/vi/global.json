@@ -6,6 +6,7 @@
     "UNAUTHORIZED": "Xác thực không thành công. Vui lòng đăng nhập.",
     "FORBIDDEN": "Bạn không có quyền thực hiện hành động này.",
     "RESOURCE_NOT_FOUND": "Tài nguyên bạn yêu cầu không được tìm thấy.",
-    "UNPROCESSABLE_ENTITY": "Dữ liệu cung cấp không hợp lệ."
+    "UNPROCESSABLE_ENTITY": "Dữ liệu cung cấp không hợp lệ.",
+    "VALIDATION_FAILED": "Dữ liệu cung cấp không hợp lệ."
   }
 }

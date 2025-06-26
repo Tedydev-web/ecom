@@ -1,11 +1,14 @@
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus, Logger } from '@nestjs/common'
 import { HttpAdapterHost } from '@nestjs/core'
-import { I18nService, I18nValidationException } from 'nestjs-i18n'
+import { I18nService, I18nContext } from 'nestjs-i18n'
 import { ApiException } from 'src/shared/exceptions/api.exception'
-import { Response } from 'express'
+import { Response, Request } from 'express'
 import { I18nTranslations } from 'src/generated/i18n.generated'
+import { ZodError } from 'zod'
+import { CookieService } from '../services/cookie.service'
 
 interface IErrorResponse {
+  success: false
   statusCode: number
   code: string
   message: string
@@ -19,6 +22,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
   constructor(
     private readonly httpAdapterHost: HttpAdapterHost,
     private readonly i18n: I18nService<I18nTranslations>,
+    private readonly cookieService: CookieService,
   ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
@@ -26,43 +30,71 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const ctx = host.switchToHttp()
     const response = ctx.getResponse<Response>()
     const request = ctx.getRequest<Request>()
+    const lang = I18nContext.current()?.lang
 
-    let errorResponse: IErrorResponse
+    let statusCode: HttpStatus
+    let code: string
+    let message: string
+    let details: any
 
     if (exception instanceof ApiException) {
-      errorResponse = {
-        statusCode: exception.getStatus(),
-        code: exception.code,
-        message: this.i18n.t(exception.message as any, {
-          lang: ctx.getRequest().i18nLang,
-          args: exception.details,
-        }),
-        details: exception.details,
-      }
+      statusCode = exception.getStatus()
+      code = exception.code
+      message = this.i18n.t(exception.message as any, {
+        lang,
+        args: exception.details,
+      })
+      details = exception.details
+    } else if (exception instanceof ZodError) {
+      statusCode = HttpStatus.UNPROCESSABLE_ENTITY
+      code = 'VALIDATION_FAILED'
+      message = this.i18n.t('global.error.VALIDATION_FAILED' as any, { lang })
+      details = exception.flatten()
     } else if (exception instanceof HttpException) {
-      const status = exception.getStatus()
-      const resp = exception.getResponse()
-      errorResponse = {
-        statusCode: status,
-        code: `HTTP_${status}`,
-        message: typeof resp === 'string' ? resp : (resp as any).message || 'Http Exception',
-        details: typeof resp === 'string' ? undefined : resp,
+      statusCode = exception.getStatus()
+      const exceptionResponse = exception.getResponse()
+      code = `HTTP_${statusCode}`
+      if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
+        message = (exceptionResponse as any).message || exception.message
+        details = exceptionResponse
+      } else {
+        message = exceptionResponse || exception.message
       }
     } else {
-      errorResponse = {
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'An internal server error occurred',
-        details: process.env.NODE_ENV !== 'production' ? (exception as Error).stack : undefined,
-      }
+      statusCode = HttpStatus.INTERNAL_SERVER_ERROR
+      code = 'INTERNAL_SERVER_ERROR'
+      message = this.i18n.t('global.error.INTERNAL_SERVER_ERROR', { lang })
+      details = process.env.NODE_ENV !== 'production' ? (exception as Error).stack : undefined
     }
 
-    this.logger.error(
-      `[${request.method} ${request.url}] - Status: ${errorResponse.statusCode} - Code: ${errorResponse.code}`,
-      JSON.stringify(errorResponse.details),
-      (exception as Error).stack,
-    )
+    const responseBody: IErrorResponse = {
+      success: false,
+      statusCode,
+      code,
+      message,
+      details,
+    }
 
-    httpAdapter.reply(response, errorResponse, errorResponse.statusCode)
+    this.logError(request, responseBody, exception)
+    this.handleAuthCookies(statusCode, response)
+
+    httpAdapter.reply(response, responseBody, statusCode)
+  }
+
+  private logError(request: Request, errorResponse: IErrorResponse, exception: unknown) {
+    const { method, url } = request
+    const { statusCode, code, details } = errorResponse
+    const errorDetails = JSON.stringify(details)
+    const stack = (exception as Error).stack
+
+    this.logger.error(`[${method} ${url}] - Status: ${statusCode} - Code: ${code} - Details: ${errorDetails}`, stack)
+  }
+
+  private handleAuthCookies(statusCode: number, response: Response) {
+    // Nếu lỗi là do không được phép (Unauthorized), xóa cookie để buộc người dùng đăng nhập lại.
+    // Điều này tăng cường bảo mật, tránh trường hợp cookie cũ vẫn được lưu trên trình duyệt.
+    if (statusCode === 401) {
+      this.cookieService.clearTokenCookies(response)
+    }
   }
 }

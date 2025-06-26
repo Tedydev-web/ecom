@@ -22,19 +22,18 @@ export type I18nTranslations = {
             "INVALID_PASSWORD": string;
             "REFRESH_TOKEN_ALREADY_USED": string;
             "UNAUTHORIZED_ACCESS": string;
-            "FAILED_TO_GET_GOOGLE_USER_INFO": string;
+            "GOOGLE_USER_INFO_ERROR": string;
             "INVALID_TOTP": string;
             "TOTP_ALREADY_ENABLED": string;
             "TOTP_NOT_ENABLED": string;
             "INVALID_TOTP_AND_CODE": string;
+            "DISABLE_2FA_REQUIRES_CODE": string;
             "REFRESH_TOKEN_REQUIRED": string;
-            "REFRESH_TOKEN_EXPIRED": string;
-            "REFRESH_TOKEN_INVALID": string;
-            "USER_INACTIVE": string;
-            "USER_NOT_ACTIVE": string;
             "INVALID_REFRESH_TOKEN": string;
             "REFRESH_TOKEN_REUSED": string;
-            "REFRESH_TOKEN_NOT_FOUND_IN_DB": string;
+            "USER_NOT_FOUND": string;
+            "USER_NOT_ACTIVE": string;
+            "INVALID_CSRF_TOKEN": string;
         };
     };
     "global": {
@@ -46,6 +45,7 @@ export type I18nTranslations = {
             "FORBIDDEN": string;
             "RESOURCE_NOT_FOUND": string;
             "UNPROCESSABLE_ENTITY": string;
+            "VALIDATION_FAILED": string;
         };
     };
     "language": {

@@ -13,6 +13,7 @@ export interface AccessTokenPayload extends AccessTokenPayloadCreate {
 
 export interface RefreshTokenPayloadCreate {
   userId: number
+  deviceId: number
 }
 
 export interface RefreshTokenPayload extends RefreshTokenPayloadCreate {

@@ -20,20 +20,7 @@ import envConfig from 'src/shared/config'
 import { TypeOfVerificationCode, TypeOfVerificationCodeType } from 'src/shared/constants/auth.constant'
 import { EmailService } from 'src/shared/services/email.service'
 import { AccessTokenPayloadCreate } from 'src/shared/types/jwt.type'
-import {
-  EmailAlreadyExistsException,
-  EmailNotFoundException,
-  FailedToSendOTPException,
-  InvalidOTPException,
-  InvalidPasswordException,
-  InvalidTOTPAndCodeException,
-  InvalidTOTPException,
-  OTPExpiredException,
-  RefreshTokenAlreadyUsedException,
-  TOTPAlreadyEnabledException,
-  TOTPNotEnabledException,
-  UnauthorizedAccessException,
-} from 'src/routes/auth/auth.error'
+import { AuthError } from 'src/routes/auth/auth.error'
 import { TwoFactorService } from 'src/shared/services/2fa.service'
 import { CookieService } from 'src/shared/services/cookie.service'
 import { Response } from 'express'
@@ -80,10 +67,11 @@ export class AuthService {
       },
     })
     if (!vevificationCode) {
-      throw InvalidOTPException
+      throw AuthError.InvalidOTP
     }
     if (vevificationCode.expiresAt < new Date()) {
-      throw OTPExpiredException
+      await this.authRepository.deleteVerificationCode({ id: vevificationCode.id })
+      throw AuthError.OTPExpired
     }
     return vevificationCode
   }
@@ -108,14 +96,14 @@ export class AuthService {
           email_code_type: {
             email: body.email,
             code: body.code,
-            type: TypeOfVerificationCode.FORGOT_PASSWORD,
+            type: TypeOfVerificationCode.REGISTER,
           },
         }),
       ])
       return user
     } catch (error) {
       if (isUniqueConstraintPrismaError(error)) {
-        throw EmailAlreadyExistsException
+        throw AuthError.EmailAlreadyExists
       }
       throw error
     }
@@ -126,10 +114,10 @@ export class AuthService {
       email: body.email,
     })
     if (body.type === TypeOfVerificationCode.REGISTER && user) {
-      throw EmailAlreadyExistsException
+      throw AuthError.EmailAlreadyExists
     }
     if (body.type === TypeOfVerificationCode.FORGOT_PASSWORD && !user) {
-      throw EmailNotFoundException
+      throw AuthError.EmailNotFound
     }
     const code = generateOTP()
     await this.authRepository.createVerificationCode({
@@ -143,7 +131,7 @@ export class AuthService {
       code,
     })
     if (error) {
-      throw FailedToSendOTPException
+      throw AuthError.FailedToSendOTP
     }
     return { message: 'auth.success.OTP_SENT' }
   }
@@ -155,18 +143,18 @@ export class AuthService {
     })
 
     if (!user) {
-      throw EmailNotFoundException
+      throw AuthError.EmailNotFound
     }
 
     const isPasswordMatch = await this.hashingService.compare(body.password, user.password)
     if (!isPasswordMatch) {
-      throw InvalidPasswordException
+      throw AuthError.InvalidPassword
     }
     // 2. Nếu user đã bật mã 2FA thì kiểm tra mã 2FA TOTP Code hoặc OTP Code (email)
     if (user.totpSecret) {
       // Nếu không có mã TOTP Code và Code thì thông báo cho client biết
       if (!body.totpCode && !body.code) {
-        throw InvalidTOTPAndCodeException
+        throw AuthError.InvalidTOTPAndCode
       }
 
       // Kiểm tra TOTP Code có hợp lệ hay không
@@ -176,7 +164,7 @@ export class AuthService {
           token: body.totpCode,
         })
         if (!isValid) {
-          throw InvalidTOTPException
+          throw AuthError.InvalidTOTP
         }
       } else if (body.code) {
         // Kiểm tra mã OTP có hợp lệ không
@@ -221,62 +209,55 @@ export class AuthService {
       }),
       this.tokenService.signRefreshToken({
         userId,
+        deviceId,
       }),
     ])
-    const decodedRefreshToken = await this.tokenService.verifyRefreshToken(refreshToken)
-    await this.authRepository.createRefreshToken({
-      token: refreshToken,
-      userId,
-      expiresAt: new Date(decodedRefreshToken.exp * 1000),
-      deviceId,
-    })
     return { accessToken, refreshToken }
   }
 
   async refreshToken({ refreshToken, userAgent, ip, res }: RefreshTokenInput) {
     if (!refreshToken) {
-      throw GlobalError.Unauthorized('auth.error.REFRESH_TOKEN_REQUIRED')
+      throw AuthError.RefreshTokenRequired
     }
-    const { jti, exp } = await this.tokenService.verifyRefreshToken(refreshToken).catch(() => {
-      throw GlobalError.Unauthorized('auth.error.INVALID_REFRESH_TOKEN')
+
+    const { jti, userId, deviceId } = await this.tokenService.verifyRefreshToken(refreshToken).catch(() => {
+      throw AuthError.InvalidRefreshToken
     })
 
     const isUsed = await this.sessionService.isRefreshTokenUsed(jti)
     if (isUsed) {
-      // TODO: Đây là một sự kiện bảo mật nghiêm trọng, cần có hành động mạnh hơn
-      // như thu hồi tất cả các phiên của user.
-      throw GlobalError.Forbidden('auth.error.REFRESH_TOKEN_REUSED')
+      // This is a critical security event. A stolen refresh token might have been used.
+      // TODO: Invalidate all active sessions for this user.
+      throw AuthError.RefreshTokenReused
     }
 
-    const refreshTokenRecord = await this.authRepository.findUniqueRefreshTokenIncludeUserRole({
-      token: refreshToken,
-    })
-
-    if (!refreshTokenRecord) {
-      this.cookieService.clearTokenCookies(res)
-      throw GlobalError.Unauthorized('auth.error.REFRESH_TOKEN_NOT_FOUND_IN_DB')
-    }
-
-    if (refreshTokenRecord.user.status !== 'ACTIVE') {
-      this.cookieService.clearTokenCookies(res)
-      throw GlobalError.Forbidden('auth.error.USER_NOT_ACTIVE')
-    }
-
-    // Đánh dấu RT cũ là đã sử dụng
+    // Mark the refresh token as used immediately to prevent race conditions.
     await this.sessionService.markRefreshTokenAsUsed(jti)
 
+    const user = await this.authRepository.findUniqueUserIncludeRole({ id: userId })
+
+    if (!user) {
+      this.cookieService.clearTokenCookies(res)
+      throw AuthError.UserNotFound
+    }
+
+    if (user.status !== 'ACTIVE') {
+      this.cookieService.clearTokenCookies(res)
+      throw AuthError.UserNotActive
+    }
+
     let device = await this.authRepository.findUniqueDevice({
-      id: refreshTokenRecord.deviceId,
+      id: deviceId,
     })
 
     if (!device) {
+      // This case is unlikely if the RT is valid, but we handle it for robustness.
       device = await this.authRepository.createDevice({
-        userId: refreshTokenRecord.user.id,
+        userId: user.id,
         userAgent,
         ip,
       })
     } else {
-      // Cập nhật lastActive và có thể cả IP nếu cần
       device = await this.authRepository.updateDevice(device.id, {
         lastActive: new Date(),
         ip,
@@ -284,33 +265,31 @@ export class AuthService {
     }
 
     const tokens = await this.generateTokens({
-      userId: refreshTokenRecord.user.id,
+      userId: user.id,
       deviceId: device.id,
-      roleId: refreshTokenRecord.user.role.id,
-      roleName: refreshTokenRecord.user.role.name,
+      roleId: user.role.id,
+      roleName: user.role.name,
     })
-    this.cookieService.setTokenCookies(res, tokens.accessToken, tokens.refreshToken, true) // Refresh token should always extend session
-    const { password, totpSecret, ...userWithoutSensitiveData } = refreshTokenRecord.user
+
+    this.cookieService.setTokenCookies(res, tokens.accessToken, tokens.refreshToken, true) // Always extend session on refresh
+
     res.status(HttpStatus.OK).send({ message: 'auth.success.REFRESH_TOKEN_SUCCESS' })
-    return userWithoutSensitiveData
   }
 
-  async logout(refreshToken: string, res: Response) {
-    if (!refreshToken) {
-      return { message: 'auth.success.LOGOUT_SUCCESS' }
-    }
-    try {
-      const { jti, exp } = await this.tokenService.verifyRefreshToken(refreshToken)
-      const remainingTime = exp - Math.floor(Date.now() / 1000)
+  async logout(refreshToken: string | undefined, res: Response) {
+    if (refreshToken) {
+      try {
+        const { jti, exp } = await this.tokenService.verifyRefreshToken(refreshToken)
+        const remainingTime = exp - Math.floor(Date.now() / 1000)
 
-      await this.sessionService.addToBlacklist(jti, remainingTime)
-      await this.authRepository.deleteRefreshToken({ token: refreshToken })
-    } catch (error) {
-      // Bỏ qua lỗi nếu token không hợp lệ, vì mục tiêu là đăng xuất
-    } finally {
-      this.cookieService.clearTokenCookies(res)
+        // Add to blacklist to prevent reuse until expiry.
+        await this.sessionService.addToBlacklist(jti, remainingTime)
+      } catch (error) {
+        // Ignore errors if token is invalid, as the goal is to log out anyway.
+      }
     }
 
+    this.cookieService.clearTokenCookies(res)
     return { message: 'auth.success.LOGOUT_SUCCESS' }
   }
 
@@ -341,10 +320,10 @@ export class AuthService {
       id: userId,
     })
     if (!user) {
-      throw EmailNotFoundException
+      throw AuthError.UserNotFound
     }
     if (user.totpSecret) {
-      throw TOTPAlreadyEnabledException
+      throw AuthError.TOTPAlreadyEnabled
     }
     // 2. Tạo ra secret và uri
     const { secret, uri } = this.twoFactorService.generateTOTPSecret(user.email)
@@ -362,10 +341,10 @@ export class AuthService {
     // 1. Lấy thông tin user, kiểm tra xem user có tồn tại hay không, và xem họ đã bật 2FA chưa
     const user = await this.sharedUserRepository.findUnique({ id: userId })
     if (!user) {
-      throw EmailNotFoundException
+      throw AuthError.UserNotFound
     }
     if (!user.totpSecret) {
-      throw TOTPNotEnabledException
+      throw AuthError.TOTPNotEnabled
     }
 
     // 2. Kiểm tra mã TOTP có hợp lệ hay không
@@ -375,7 +354,7 @@ export class AuthService {
         token: totpCode,
       })
       if (!isValid) {
-        throw InvalidTOTPException
+        throw AuthError.InvalidTOTP
       }
     } else if (code) {
       // 3. Kiểm tra mã OTP email có hợp lệ hay không
@@ -384,6 +363,9 @@ export class AuthService {
         code,
         type: TypeOfVerificationCode.DISABLE_2FA,
       })
+    } else {
+      // Nếu không có mã nào được cung cấp
+      throw AuthError.Disable2FARequiresCode
     }
 
     // 4. Cập nhật secret thành null

@@ -3,3 +3,4 @@ export const enum CookieNames {
   REFRESH_TOKEN = 'refresh_token',
   CSRF_TOKEN = '_csrf',
 }
+ 
