@@ -36,6 +36,8 @@ import { GlobalError } from 'src/shared/global.error'
 import { SessionService } from 'src/shared/services/session.service'
 import { UserAgentService } from 'src/shared/services/user-agent.service'
 import * as tokens from 'src/shared/constants/injection.tokens'
+import { PrismaService } from 'src/shared/services/prisma.service'
+import { Logger } from '@nestjs/common'
 
 interface RefreshTokenInput {
   refreshToken: string | undefined
@@ -46,6 +48,8 @@ interface RefreshTokenInput {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name)
+
   constructor(
     @Inject(tokens.HASHING_SERVICE) private readonly hashingService: HashingService,
     private readonly rolesService: RolesService,
@@ -58,6 +62,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     @Inject(tokens.SESSION_SERVICE) private readonly sessionService: SessionService,
     @Inject(tokens.USER_AGENT_SERVICE) private readonly userAgentService: UserAgentService,
+    private readonly prismaService: PrismaService,
   ) {}
 
   async validateVerificationCode({
@@ -390,10 +395,17 @@ export class AuthService {
 
   // Helper method to revoke all sessions for a user (security measure)
   private async revokeAllUserSessions(userId: number): Promise<void> {
-    // This will mark the revokedAllSessionsBefore timestamp
-    // All existing sessions before this time will be considered invalid
-    await this.sharedUserRepository.update(userId, {
-      revokedAllSessionsBefore: new Date(),
-    })
+    try {
+      // Vô hiệu hóa tất cả các phiên của người dùng này như một biện pháp bảo mật
+      await this.prismaService.user.update({
+        where: { id: userId },
+        data: { revokedAllSessionsBefore: new Date() },
+      })
+
+      this.logger.log(`Revoked all sessions for user ${userId} as security measure`)
+    } catch (error) {
+      this.logger.error(`Failed to revoke sessions for user ${userId}:`, error)
+      throw GlobalError.InternalServerError('auth.error.SESSION_REVOKE_FAILED')
+    }
   }
 }

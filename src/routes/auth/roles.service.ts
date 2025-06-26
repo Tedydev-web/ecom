@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common'
 import { RoleName } from 'src/shared/constants/role.constant'
 import { PrismaService } from 'src/shared/services/prisma.service'
-import { Role } from '@prisma/client'
+import { RoleType } from 'src/shared/models/shared-user.model'
 
 @Injectable()
 export class RolesService {
   private clientRoleId: number | null = null
-  private rolesCache: Map<number, Role> = new Map()
+  private rolesCache: Map<number, RoleType> = new Map()
 
   constructor(private readonly prismaService: PrismaService) {}
 
@@ -29,7 +29,7 @@ export class RolesService {
     return this.clientRoleId
   }
 
-  async getRoleById(id: number): Promise<Role | null> {
+  async getRoleById(id: number): Promise<RoleType | null> {
     if (this.rolesCache.has(id)) {
       return this.rolesCache.get(id)!
     }

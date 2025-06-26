@@ -5,7 +5,7 @@ import { isNotFoundPrismaError, isUniqueConstraintPrismaError } from 'src/shared
 import { LanguageError } from 'src/routes/language/language.error'
 import { BasePaginationQueryType, PaginatedResponseType } from 'src/shared/dtos/pagination.dto'
 
-interface LanguageServiceResponse<T> {
+export interface LanguageServiceResponse<T> {
   message: string
   data?: T
   metadata?: any
@@ -15,10 +15,10 @@ interface LanguageServiceResponse<T> {
 export class LanguageService {
   constructor(private languageRepo: LanguageRepo) {}
 
+  // Standard offset-based pagination for admin/management UI
   async findAll(query: BasePaginationQueryType): Promise<LanguageServiceResponse<LanguageType[]>> {
     try {
       const result = await this.languageRepo.findAllWithPagination(query)
-
       return {
         message: 'language.success.GET_LANGUAGES',
         data: result.data,
@@ -29,27 +29,32 @@ export class LanguageService {
     }
   }
 
-  async findById(id: string) {
-    const language = await this.languageRepo.findById(id)
-    if (!language) {
-      throw LanguageError.NotFound
-    }
-
-    return {
-      message: 'language.success.GET_DETAIL_SUCCESS',
-      data: language,
+  async findById(id: string): Promise<LanguageServiceResponse<LanguageType>> {
+    try {
+      const language = await this.languageRepo.findById(id)
+      if (!language) {
+        throw LanguageError.NotFound
+      }
+      return {
+        message: 'language.success.GET_LANGUAGE_DETAIL',
+        data: language,
+      }
+    } catch (error) {
+      if (error === LanguageError.NotFound) {
+        throw error
+      }
+      throw LanguageError.OperationFailed
     }
   }
 
-  async create({ data, createdById }: { data: CreateLanguageBodyType; createdById: number }) {
+  async create(body: CreateLanguageBodyType, userId: number): Promise<LanguageServiceResponse<LanguageType>> {
     try {
       const language = await this.languageRepo.create({
-        createdById,
-        data,
+        data: body,
+        createdById: userId,
       })
-
       return {
-        message: 'language.success.CREATE_SUCCESS',
+        message: 'language.success.CREATE_LANGUAGE',
         data: language,
       }
     } catch (error) {
@@ -60,32 +65,38 @@ export class LanguageService {
     }
   }
 
-  async update({ id, data, updatedById }: { id: string; data: UpdateLanguageBodyType; updatedById: number }) {
+  async update(
+    id: string,
+    body: UpdateLanguageBodyType,
+    userId: number,
+  ): Promise<LanguageServiceResponse<LanguageType>> {
     try {
       const language = await this.languageRepo.update({
         id,
-        updatedById,
-        data,
+        data: body,
+        updatedById: userId,
       })
-
       return {
-        message: 'language.success.UPDATE_SUCCESS',
+        message: 'language.success.UPDATE_LANGUAGE',
         data: language,
       }
     } catch (error) {
       if (isNotFoundPrismaError(error)) {
         throw LanguageError.NotFound
       }
+      if (isUniqueConstraintPrismaError(error)) {
+        throw LanguageError.AlreadyExists
+      }
       throw LanguageError.OperationFailed
     }
   }
 
-  async delete(id: string) {
+  async delete(id: string): Promise<LanguageServiceResponse<LanguageType>> {
     try {
-      // hard delete
-      await this.languageRepo.delete(id, true)
+      const language = await this.languageRepo.delete(id, false)
       return {
-        message: 'language.success.DELETE_SUCCESS',
+        message: 'language.success.DELETE_LANGUAGE',
+        data: language,
       }
     } catch (error) {
       if (isNotFoundPrismaError(error)) {

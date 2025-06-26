@@ -1,71 +1,62 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common'
+import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common'
 import { ZodSerializerDto } from 'nestjs-zod'
+import { LanguageService, LanguageServiceResponse } from 'src/routes/language/language.service'
 import {
   CreateLanguageBodyDTO,
-  GetLanguageDetailResDTO,
-  GetLanguageParamsDTO,
-  GetLanguagesResDTO,
   UpdateLanguageBodyDTO,
+  GetLanguagesResDTO,
+  GetLanguageDetailResDTO,
   CreateLanguageResDTO,
   UpdateLanguageResDTO,
   DeleteLanguageResDTO,
+  GetLanguageParamsDTO,
 } from 'src/routes/language/language.dto'
-import { LanguageService } from 'src/routes/language/language.service'
+import { LanguageType } from './language.model'
 import { ActiveUser } from 'src/shared/decorators/active-user.decorator'
 import { MessageResDTO, SuccessResponseDTO } from 'src/shared/dtos/response.dto'
 import { BasePaginationQueryDTO } from 'src/shared/dtos/pagination.dto'
 import { AuthType } from 'src/shared/constants/auth.constant'
 import { Auth } from 'src/shared/decorators/auth.decorator'
-import { LanguageType } from './language.model'
-
-export interface LanguageServiceResponse<T> {
-  message: string
-  data?: T
-  metadata?: any
-}
 
 @Controller('languages')
+@Auth([AuthType.Bearer])
 export class LanguageController {
   constructor(private readonly languageService: LanguageService) {}
 
   @Get()
   @ZodSerializerDto(GetLanguagesResDTO)
-  async findAll(@Query() query: BasePaginationQueryDTO): Promise<LanguageServiceResponse<LanguageType[]>> {
+  findAll(@Query() query: BasePaginationQueryDTO): Promise<LanguageServiceResponse<LanguageType[]>> {
     return this.languageService.findAll(query)
   }
 
   @Get(':languageId')
   @ZodSerializerDto(GetLanguageDetailResDTO)
-  findById(@Param() params: GetLanguageParamsDTO) {
+  findById(@Param() params: GetLanguageParamsDTO): Promise<LanguageServiceResponse<LanguageType>> {
     return this.languageService.findById(params.languageId)
   }
 
   @Post()
   @ZodSerializerDto(CreateLanguageResDTO)
-  create(@Body() body: CreateLanguageBodyDTO, @ActiveUser('userId') userId: number) {
-    return this.languageService.create({
-      data: body,
-      createdById: userId,
-    })
+  create(
+    @Body() body: CreateLanguageBodyDTO,
+    @ActiveUser('userId') userId: number,
+  ): Promise<LanguageServiceResponse<LanguageType>> {
+    return this.languageService.create(body, userId)
   }
 
   @Put(':languageId')
   @ZodSerializerDto(UpdateLanguageResDTO)
   update(
-    @Body() body: UpdateLanguageBodyDTO,
     @Param() params: GetLanguageParamsDTO,
+    @Body() body: UpdateLanguageBodyDTO,
     @ActiveUser('userId') userId: number,
-  ) {
-    return this.languageService.update({
-      data: body,
-      id: params.languageId,
-      updatedById: userId,
-    })
+  ): Promise<LanguageServiceResponse<LanguageType>> {
+    return this.languageService.update(params.languageId, body, userId)
   }
 
   @Delete(':languageId')
   @ZodSerializerDto(DeleteLanguageResDTO)
-  delete(@Param() params: GetLanguageParamsDTO) {
+  delete(@Param() params: GetLanguageParamsDTO): Promise<LanguageServiceResponse<LanguageType>> {
     return this.languageService.delete(params.languageId)
   }
 }

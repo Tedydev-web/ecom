@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common'
-import { User, UserStatus } from '@prisma/client'
+import { UserStatus } from 'src/shared/constants/auth.constant'
+import { UserType } from 'src/shared/models/shared-user.model'
 import { BaseRepository } from 'src/shared/repositories/base.repository'
 import { PrismaService } from 'src/shared/services/prisma.service'
 
 @Injectable()
-export class SharedUserRepository extends BaseRepository<User> {
+export class SharedUserRepository extends BaseRepository<UserType> {
   constructor(prismaService: PrismaService) {
     super(prismaService, 'user')
   }
@@ -14,13 +15,13 @@ export class SharedUserRepository extends BaseRepository<User> {
     return ['name', 'email', 'phoneNumber']
   }
 
-  async findByEmail(email: string): Promise<User | null> {
+  async findByEmail(email: string): Promise<UserType | null> {
     return this.prismaService.user.findUnique({
       where: { email },
     })
   }
 
-  async findActiveUserByEmail(email: string): Promise<User | null> {
+  async findActiveUserByEmail(email: string): Promise<UserType | null> {
     return this.prismaService.user.findFirst({
       where: {
         email,
