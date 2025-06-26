@@ -1,21 +1,31 @@
 import { Injectable } from '@nestjs/common'
 import { LanguageRepo } from 'src/routes/language/language.repo'
-import { CreateLanguageBodyType, UpdateLanguageBodyType } from 'src/routes/language/language.model'
+import { CreateLanguageBodyType, UpdateLanguageBodyType, LanguageType } from 'src/routes/language/language.model'
 import { isNotFoundPrismaError, isUniqueConstraintPrismaError } from 'src/shared/helpers'
 import { LanguageError } from 'src/routes/language/language.error'
-import { BasePaginationQueryType } from 'src/shared/dtos/pagination.dto'
+import { BasePaginationQueryType, PaginatedResponseType } from 'src/shared/dtos/pagination.dto'
+
+interface LanguageServiceResponse<T> {
+  message: string
+  data?: T
+  metadata?: any
+}
 
 @Injectable()
 export class LanguageService {
   constructor(private languageRepo: LanguageRepo) {}
 
-  async findAll(query?: BasePaginationQueryType) {
-    const data = await this.languageRepo.findAll()
+  async findAll(query: BasePaginationQueryType): Promise<LanguageServiceResponse<LanguageType[]>> {
+    try {
+      const result = await this.languageRepo.findAllWithPagination(query)
 
-    // Trả về data trực tiếp, để TransformInterceptor xử lý cấu trúc response
-    return {
-      message: 'language.success.GET_ALL_SUCCESS',
-      data,
+      return {
+        message: 'language.success.GET_LANGUAGES',
+        data: result.data,
+        metadata: result.metadata,
+      }
+    } catch (error) {
+      throw LanguageError.OperationFailed
     }
   }
 

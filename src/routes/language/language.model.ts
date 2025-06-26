@@ -1,5 +1,9 @@
 import { z } from 'zod'
-import { createTypedSuccessResponseSchema, createTypedPaginatedResponseSchema } from 'src/shared/models/response.model'
+import {
+  createTypedSuccessResponseSchema,
+  createTypedPaginatedResponseSchema,
+  MessageResSchema,
+} from 'src/shared/models/response.model'
 
 export const LanguageSchema = z.object({
   id: z.string().max(10),
@@ -11,15 +15,19 @@ export const LanguageSchema = z.object({
   updatedAt: z.date(),
 })
 
+// Response Schemas
 export const GetLanguagesResSchema = createTypedPaginatedResponseSchema(LanguageSchema)
+export const GetLanguageDetailResSchema = createTypedSuccessResponseSchema(LanguageSchema)
+export const CreateLanguageResSchema = createTypedSuccessResponseSchema(LanguageSchema)
+export const UpdateLanguageResSchema = createTypedSuccessResponseSchema(LanguageSchema)
+export const DeleteLanguageResSchema = MessageResSchema
 
+// Request Schemas
 export const GetLanguageParamsSchema = z
   .object({
     languageId: z.string().max(10),
   })
   .strict()
-
-export const GetLanguageDetailResSchema = createTypedSuccessResponseSchema(LanguageSchema)
 
 export const CreateLanguageBodySchema = LanguageSchema.pick({
   id: true,
@@ -30,9 +38,13 @@ export const UpdateLanguageBodySchema = LanguageSchema.pick({
   name: true,
 }).strict()
 
+// Types
 export type LanguageType = z.infer<typeof LanguageSchema>
 export type GetLanguagesResType = z.infer<typeof GetLanguagesResSchema>
 export type GetLanguageDetailResType = z.infer<typeof GetLanguageDetailResSchema>
+export type CreateLanguageResType = z.infer<typeof CreateLanguageResSchema>
+export type UpdateLanguageResType = z.infer<typeof UpdateLanguageResSchema>
+export type DeleteLanguageResType = z.infer<typeof DeleteLanguageResSchema>
 export type CreateLanguageBodyType = z.infer<typeof CreateLanguageBodySchema>
 export type GetLanguageParamsType = z.infer<typeof GetLanguageParamsSchema>
 export type UpdateLanguageBodyType = z.infer<typeof UpdateLanguageBodySchema>

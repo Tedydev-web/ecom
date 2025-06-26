@@ -6,30 +6,42 @@ import {
   GetLanguageParamsDTO,
   GetLanguagesResDTO,
   UpdateLanguageBodyDTO,
+  CreateLanguageResDTO,
+  UpdateLanguageResDTO,
+  DeleteLanguageResDTO,
 } from 'src/routes/language/language.dto'
 import { LanguageService } from 'src/routes/language/language.service'
 import { ActiveUser } from 'src/shared/decorators/active-user.decorator'
 import { MessageResDTO, SuccessResponseDTO } from 'src/shared/dtos/response.dto'
 import { BasePaginationQueryDTO } from 'src/shared/dtos/pagination.dto'
+import { AuthType } from 'src/shared/constants/auth.constant'
+import { Auth } from 'src/shared/decorators/auth.decorator'
+import { LanguageType } from './language.model'
+
+export interface LanguageServiceResponse<T> {
+  message: string
+  data?: T
+  metadata?: any
+}
 
 @Controller('languages')
 export class LanguageController {
   constructor(private readonly languageService: LanguageService) {}
 
   @Get()
-  @ZodSerializerDto(SuccessResponseDTO)
-  findAll(@Query() query: BasePaginationQueryDTO) {
+  @ZodSerializerDto(GetLanguagesResDTO)
+  async findAll(@Query() query: BasePaginationQueryDTO): Promise<LanguageServiceResponse<LanguageType[]>> {
     return this.languageService.findAll(query)
   }
 
   @Get(':languageId')
-  @ZodSerializerDto(SuccessResponseDTO)
+  @ZodSerializerDto(GetLanguageDetailResDTO)
   findById(@Param() params: GetLanguageParamsDTO) {
     return this.languageService.findById(params.languageId)
   }
 
   @Post()
-  @ZodSerializerDto(SuccessResponseDTO)
+  @ZodSerializerDto(CreateLanguageResDTO)
   create(@Body() body: CreateLanguageBodyDTO, @ActiveUser('userId') userId: number) {
     return this.languageService.create({
       data: body,
@@ -38,7 +50,7 @@ export class LanguageController {
   }
 
   @Put(':languageId')
-  @ZodSerializerDto(SuccessResponseDTO)
+  @ZodSerializerDto(UpdateLanguageResDTO)
   update(
     @Body() body: UpdateLanguageBodyDTO,
     @Param() params: GetLanguageParamsDTO,
@@ -52,7 +64,7 @@ export class LanguageController {
   }
 
   @Delete(':languageId')
-  @ZodSerializerDto(MessageResDTO)
+  @ZodSerializerDto(DeleteLanguageResDTO)
   delete(@Param() params: GetLanguageParamsDTO) {
     return this.languageService.delete(params.languageId)
   }

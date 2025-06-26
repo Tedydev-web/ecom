@@ -98,6 +98,8 @@ export abstract class BaseRepository<T> {
         page,
         limit,
         totalPages: Math.ceil(totalItems / limit),
+        hasNext: page < Math.ceil(totalItems / limit),
+        hasPrev: page > 1,
       },
     }
   }

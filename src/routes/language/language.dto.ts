@@ -5,14 +5,19 @@ import {
   GetLanguageParamsSchema,
   GetLanguagesResSchema,
   UpdateLanguageBodySchema,
+  CreateLanguageResSchema,
+  UpdateLanguageResSchema,
+  DeleteLanguageResSchema,
 } from 'src/routes/language/language.model'
 
-export class GetLanguagesResDTO extends createZodDto(GetLanguagesResSchema) {}
-
+// Request DTOs
 export class GetLanguageParamsDTO extends createZodDto(GetLanguageParamsSchema) {}
-
-export class GetLanguageDetailResDTO extends createZodDto(GetLanguageDetailResSchema) {}
-
 export class CreateLanguageBodyDTO extends createZodDto(CreateLanguageBodySchema) {}
-
 export class UpdateLanguageBodyDTO extends createZodDto(UpdateLanguageBodySchema) {}
+
+// Response DTOs
+export class GetLanguagesResDTO extends createZodDto(GetLanguagesResSchema) {}
+export class GetLanguageDetailResDTO extends createZodDto(GetLanguageDetailResSchema) {}
+export class CreateLanguageResDTO extends createZodDto(CreateLanguageResSchema) {}
+export class UpdateLanguageResDTO extends createZodDto(UpdateLanguageResSchema) {}
+export class DeleteLanguageResDTO extends createZodDto(DeleteLanguageResSchema) {}
