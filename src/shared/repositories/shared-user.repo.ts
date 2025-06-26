@@ -15,6 +15,10 @@ export class SharedUserRepository extends BaseRepository<UserType> {
     return ['name', 'email', 'phoneNumber']
   }
 
+  protected getSortableFields(): string[] {
+    return ['id', 'name', 'email', 'phoneNumber', 'createdAt', 'updatedAt']
+  }
+
   async findByEmail(email: string): Promise<UserType | null> {
     return this.prismaService.user.findUnique({
       where: { email },

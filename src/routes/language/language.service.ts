@@ -71,11 +71,7 @@ export class LanguageService {
     userId: number,
   ): Promise<LanguageServiceResponse<LanguageType>> {
     try {
-      const language = await this.languageRepo.update({
-        id,
-        data: body,
-        updatedById: userId,
-      })
+      const language = await this.languageRepo.update(id, { ...body, updatedById: userId })
       return {
         message: 'language.success.UPDATE_LANGUAGE',
         data: language,
@@ -93,7 +89,7 @@ export class LanguageService {
 
   async delete(id: string): Promise<LanguageServiceResponse<LanguageType>> {
     try {
-      const language = await this.languageRepo.delete(id, false)
+      const language = await this.languageRepo.delete(id)
       return {
         message: 'language.success.DELETE_LANGUAGE',
         data: language,

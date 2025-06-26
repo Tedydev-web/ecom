@@ -19,6 +19,7 @@ import { UserAgent } from 'src/shared/decorators/user-agent.decorator'
 import { MessageResDTO, createTypedSuccessResponseDTO } from 'src/shared/dtos/response.dto'
 import { Ip } from 'src/shared/decorators/ip.decorator'
 import { AccessTokenGuard } from 'src/shared/guards/access-token.guard'
+import { CookieNames } from 'src/shared/constants/cookie.constant'
 
 // Create typed response DTOs for endpoints that return data
 const TwoFactorSetupResponseDTO = createTypedSuccessResponseDTO(TwoFactorSetupResDTO.schema)
@@ -78,7 +79,7 @@ export class AuthController {
     @Body() body: any, // RefreshTokenBodyDTO is empty, so we use any
     @Res({ passthrough: true }) res: Response,
   ) {
-    const refreshToken = res.req.cookies?.refreshToken
+    const refreshToken = res.req.cookies?.[CookieNames.REFRESH_TOKEN]
     return this.authService.logout(refreshToken, res)
   }
 
@@ -87,7 +88,7 @@ export class AuthController {
   @ZodSerializerDto(MessageResDTO)
   refreshToken(@Res({ passthrough: true }) res: Response) {
     const request = res.req as any
-    const refreshToken = request.cookies?.refreshToken
+    const refreshToken = request.cookies?.[CookieNames.REFRESH_TOKEN]
     const userAgent = request.get('User-Agent') || ''
     const ip = request.ip || ''
 

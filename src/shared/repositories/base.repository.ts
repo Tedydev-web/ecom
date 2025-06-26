@@ -35,7 +35,7 @@ export abstract class BaseRepository<T> {
 
   // --- Các phương thức CRUD cơ bản ---
 
-  async findById(id: number, prismaClient?: PrismaTransactionClient): Promise<T | null> {
+  async findById(id: string | number, prismaClient?: PrismaTransactionClient): Promise<T | null> {
     const client = this.getClient(prismaClient)
     return await client[this.modelName].findUnique({ where: { id } })
   }
@@ -45,12 +45,12 @@ export abstract class BaseRepository<T> {
     return await client[this.modelName].create({ data })
   }
 
-  async update(id: number, data: any, prismaClient?: PrismaTransactionClient): Promise<T> {
+  async update(id: string | number, data: any, prismaClient?: PrismaTransactionClient): Promise<T> {
     const client = this.getClient(prismaClient)
     return await client[this.modelName].update({ where: { id }, data })
   }
 
-  async delete(id: number, prismaClient?: PrismaTransactionClient): Promise<T> {
+  async delete(id: string | number, prismaClient?: PrismaTransactionClient): Promise<T> {
     const client = this.getClient(prismaClient)
     return await client[this.modelName].delete({ where: { id } })
   }
@@ -70,7 +70,17 @@ export abstract class BaseRepository<T> {
     const searchQuery = search ? this.buildSearchQuery(search, searchOptions) : {}
     const finalWhere = { ...where, ...searchQuery }
 
-    const orderBy = this.buildOrderBy(sortBy, sortOrder)
+    // Validate sortBy
+    const sortableFields = this.getSortableFields()
+    let orderBy: any
+    if (!sortBy) {
+      orderBy = { id: 'desc' } // Default sort
+    } else if (sortableFields.includes(sortBy)) {
+      orderBy = { [sortBy]: sortOrder || 'desc' }
+    } else {
+      // Nếu sortBy không hợp lệ, throw lỗi chuẩn hóa
+      throw new Error(`Trường sortBy không hợp lệ: ${sortBy}. Chỉ hỗ trợ: ${sortableFields.join(', ')}`)
+    }
 
     const findManyArgs = {
       where: finalWhere,
@@ -86,13 +96,11 @@ export abstract class BaseRepository<T> {
     let totalItems: number
 
     if (prismaClient) {
-      // Trong transaction, thực hiện song song mà không tạo transaction mới
       ;[items, totalItems] = await Promise.all([
         client[this.modelName].findMany(findManyArgs),
         client[this.modelName].count(countArgs),
       ])
     } else {
-      // Sử dụng $transaction để đảm bảo tính nhất quán
       ;[items, totalItems] = await this.prismaService.$transaction([
         this.prismaService[this.modelName].findMany(findManyArgs),
         this.prismaService[this.modelName].count(countArgs),
@@ -117,51 +125,34 @@ export abstract class BaseRepository<T> {
   // --- Helper Methods ---
   private buildSearchQuery(search: string, options?: SearchOptions): any {
     const searchableFields = options?.searchableFields || this.getSearchableFields()
-
-    if (searchableFields.length === 0) {
-      return {}
-    }
-
-    // Full-text search cho PostgreSQL/MySQL
+    if (searchableFields.length === 0) return {}
     if (options?.useFullTextSearch) {
       return this.buildFullTextSearchQuery(search, searchableFields)
     }
-
-    // Standard ILIKE search
     return {
       OR: searchableFields.map((field) => ({
-        [field]: {
-          contains: search,
-          mode: 'insensitive',
-        },
+        [field]: { contains: search, mode: 'insensitive' },
       })),
     }
   }
 
   private buildFullTextSearchQuery(search: string, fields: string[]): any {
-    // Implementation cho full-text search
-    // Có thể customize theo database engine
+    // Có thể customize cho DB engine
     return {
       OR: fields.map((field) => ({
-        [field]: {
-          search: search,
-        },
+        [field]: { search },
       })),
     }
-  }
-
-  private buildOrderBy(sortBy?: string, sortOrder?: string): any {
-    if (!sortBy) {
-      return { id: 'desc' } // Default sort
-    }
-
-    return { [sortBy]: sortOrder || 'desc' }
   }
 
   /**
    * Các repository con phải implement phương thức này để xác định các trường có thể tìm kiếm.
    */
   protected abstract getSearchableFields(): string[]
+  /**
+   * Các repository con phải implement phương thức này để xác định các trường có thể sort.
+   */
+  protected abstract getSortableFields(): string[]
 
   // --- Performance Optimization Methods ---
   protected async getEstimatedCount(where: any = {}): Promise<number> {
