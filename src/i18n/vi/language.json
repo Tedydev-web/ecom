@@ -1,11 +1,16 @@
 {
   "success": {
+    "GET_ALL_SUCCESS": "Lấy danh sách ngôn ngữ thành công",
+    "GET_DETAIL_SUCCESS": "Lấy thông tin ngôn ngữ thành công",
     "CREATE_SUCCESS": "Tạo ngôn ngữ thành công",
-    "UPDATE_SUCCESS": "Cập nhật ngôn ngữ thành công.",
-    "DELETE_SUCCESS": "Xóa ngôn ngữ thành công."
+    "UPDATE_SUCCESS": "Cập nhật ngôn ngữ thành công",
+    "DELETE_SUCCESS": "Xóa ngôn ngữ thành công"
   },
   "error": {
     "NOT_FOUND": "Không tìm thấy ngôn ngữ",
-    "ALREADY_EXISTS": "Ngôn ngữ này đã tồn tại."
+    "ALREADY_EXISTS": "Ngôn ngữ này đã tồn tại",
+    "INVALID_ID": "ID ngôn ngữ không hợp lệ",
+    "CANNOT_DELETE": "Không thể xóa ngôn ngữ này",
+    "OPERATION_FAILED": "Thao tác với ngôn ngữ thất bại"
   }
 }

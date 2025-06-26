@@ -217,6 +217,8 @@ export type I18nTranslations = {
     };
     "language": {
         "success": {
+            "GET_ALL_SUCCESS": string;
+            "GET_DETAIL_SUCCESS": string;
             "CREATE_SUCCESS": string;
             "UPDATE_SUCCESS": string;
             "DELETE_SUCCESS": string;
@@ -224,6 +226,9 @@ export type I18nTranslations = {
         "error": {
             "NOT_FOUND": string;
             "ALREADY_EXISTS": string;
+            "INVALID_ID": string;
+            "CANNOT_DELETE": string;
+            "OPERATION_FAILED": string;
         };
     };
 };

@@ -1,41 +1,52 @@
 import { Injectable } from '@nestjs/common'
 import { LanguageRepo } from 'src/routes/language/language.repo'
 import { CreateLanguageBodyType, UpdateLanguageBodyType } from 'src/routes/language/language.model'
-import { NotFoundRecordException } from 'src/shared/error'
 import { isNotFoundPrismaError, isUniqueConstraintPrismaError } from 'src/shared/helpers'
-import { LanguageAlreadyExistsException } from 'src/routes/language/language.error'
+import { LanguageError } from 'src/routes/language/language.error'
+import { BasePaginationQueryType } from 'src/shared/dtos/pagination.dto'
 
 @Injectable()
 export class LanguageService {
   constructor(private languageRepo: LanguageRepo) {}
 
-  async findAll() {
+  async findAll(query?: BasePaginationQueryType) {
     const data = await this.languageRepo.findAll()
+
+    // Trả về data trực tiếp, để TransformInterceptor xử lý cấu trúc response
     return {
+      message: 'language.success.GET_ALL_SUCCESS',
       data,
-      totalItems: data.length,
     }
   }
 
   async findById(id: string) {
     const language = await this.languageRepo.findById(id)
     if (!language) {
-      throw NotFoundRecordException('language')
+      throw LanguageError.NotFound
     }
-    return language
+
+    return {
+      message: 'language.success.GET_DETAIL_SUCCESS',
+      data: language,
+    }
   }
 
   async create({ data, createdById }: { data: CreateLanguageBodyType; createdById: number }) {
     try {
-      return await this.languageRepo.create({
+      const language = await this.languageRepo.create({
         createdById,
         data,
       })
+
+      return {
+        message: 'language.success.CREATE_SUCCESS',
+        data: language,
+      }
     } catch (error) {
       if (isUniqueConstraintPrismaError(error)) {
-        throw LanguageAlreadyExistsException
+        throw LanguageError.AlreadyExists
       }
-      throw error
+      throw LanguageError.OperationFailed
     }
   }
 
@@ -46,12 +57,16 @@ export class LanguageService {
         updatedById,
         data,
       })
-      return language
+
+      return {
+        message: 'language.success.UPDATE_SUCCESS',
+        data: language,
+      }
     } catch (error) {
       if (isNotFoundPrismaError(error)) {
-        throw NotFoundRecordException('language')
+        throw LanguageError.NotFound
       }
-      throw error
+      throw LanguageError.OperationFailed
     }
   }
 
@@ -64,9 +79,9 @@ export class LanguageService {
       }
     } catch (error) {
       if (isNotFoundPrismaError(error)) {
-        throw NotFoundRecordException('language')
+        throw LanguageError.NotFound
       }
-      throw error
+      throw LanguageError.OperationFailed
     }
   }
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { createTypedSuccessResponseSchema, createTypedPaginatedResponseSchema } from 'src/shared/models/response.model'
 
 export const LanguageSchema = z.object({
   id: z.string().max(10),
@@ -10,10 +11,7 @@ export const LanguageSchema = z.object({
   updatedAt: z.date(),
 })
 
-export const GetLanguagesResSchema = z.object({
-  data: z.array(LanguageSchema),
-  totalItems: z.number(),
-})
+export const GetLanguagesResSchema = createTypedPaginatedResponseSchema(LanguageSchema)
 
 export const GetLanguageParamsSchema = z
   .object({
@@ -21,7 +19,7 @@ export const GetLanguageParamsSchema = z
   })
   .strict()
 
-export const GetLanguageDetailResSchema = LanguageSchema
+export const GetLanguageDetailResSchema = createTypedSuccessResponseSchema(LanguageSchema)
 
 export const CreateLanguageBodySchema = LanguageSchema.pick({
   id: true,

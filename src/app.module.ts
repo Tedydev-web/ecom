@@ -1,6 +1,4 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common'
-import { AppController } from './app.controller'
-import { AppService } from './app.service'
 import { SharedModule } from './shared/shared.module'
 import { AuthModule } from './routes/auth/auth.module'
 import { APP_FILTER, APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core'
@@ -34,9 +32,8 @@ import { TransformInterceptor } from './shared/interceptor/transform.interceptor
     AuthModule,
     LanguageModule,
   ],
-  controllers: [AppController],
+  controllers: [],
   providers: [
-    AppService,
     {
       provide: APP_PIPE,
       useClass: ZodValidationPipe,

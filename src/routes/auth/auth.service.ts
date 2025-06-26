@@ -381,9 +381,19 @@ export class AuthService {
     }
 
     await this.sharedUserRepository.update(userId, { totpSecret: null })
-
+    // Revoke all user sessions for security when 2FA is disabled
+    await this.revokeAllUserSessions(userId)
     return {
       message: 'auth.success.DISABLE_2FA_SUCCESS',
     }
+  }
+
+  // Helper method to revoke all sessions for a user (security measure)
+  private async revokeAllUserSessions(userId: number): Promise<void> {
+    // This will mark the revokedAllSessionsBefore timestamp
+    // All existing sessions before this time will be considered invalid
+    await this.sharedUserRepository.update(userId, {
+      revokedAllSessionsBefore: new Date(),
+    })
   }
 }
