@@ -1,12 +1,13 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common'
+import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, Inject } from '@nestjs/common'
 import { Request } from 'express'
 import { REQUEST_USER_KEY } from 'src/shared/constants/auth.constant'
 import { CookieNames } from 'src/shared/constants/cookie.constant'
 import { TokenService } from 'src/shared/services/token.service'
+import * as tokens from 'src/shared/constants/injection.tokens'
 
 @Injectable()
 export class AccessTokenGuard implements CanActivate {
-  constructor(private readonly tokenService: TokenService) {}
+  constructor(@Inject(tokens.TOKEN_SERVICE) private readonly tokenService: TokenService) {}
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>()
     const accessToken = this.extractToken(request)

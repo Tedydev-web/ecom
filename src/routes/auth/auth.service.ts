@@ -1,4 +1,11 @@
-import { HttpException, Injectable, ForbiddenException, UnauthorizedException, HttpStatus } from '@nestjs/common'
+import {
+  HttpException,
+  Injectable,
+  ForbiddenException,
+  UnauthorizedException,
+  HttpStatus,
+  Inject,
+} from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { addMilliseconds } from 'date-fns'
 import {
@@ -28,6 +35,7 @@ import { UserType } from 'src/shared/models/shared-user.model'
 import { GlobalError } from 'src/shared/global.error'
 import { SessionService } from 'src/shared/services/session.service'
 import { UserAgentService } from 'src/shared/services/user-agent.service'
+import * as tokens from 'src/shared/constants/injection.tokens'
 
 interface RefreshTokenInput {
   refreshToken: string | undefined
@@ -39,17 +47,17 @@ interface RefreshTokenInput {
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly hashingService: HashingService,
+    @Inject(tokens.HASHING_SERVICE) private readonly hashingService: HashingService,
     private readonly rolesService: RolesService,
     private readonly authRepository: AuthRepository,
-    private readonly sharedUserRepository: SharedUserRepository,
-    private readonly emailService: EmailService,
-    private readonly tokenService: TokenService,
-    private readonly twoFactorService: TwoFactorService,
-    private readonly cookieService: CookieService,
+    @Inject(tokens.SHARED_USER_REPOSITORY) private readonly sharedUserRepository: SharedUserRepository,
+    @Inject(tokens.EMAIL_SERVICE) private readonly emailService: EmailService,
+    @Inject(tokens.TOKEN_SERVICE) private readonly tokenService: TokenService,
+    @Inject(tokens.TWO_FACTOR_SERVICE) private readonly twoFactorService: TwoFactorService,
+    @Inject(tokens.COOKIE_SERVICE) private readonly cookieService: CookieService,
     private readonly configService: ConfigService,
-    private readonly sessionService: SessionService,
-    private readonly userAgentService: UserAgentService,
+    @Inject(tokens.SESSION_SERVICE) private readonly sessionService: SessionService,
+    @Inject(tokens.USER_AGENT_SERVICE) private readonly userAgentService: UserAgentService,
   ) {}
 
   async validateVerificationCode({
@@ -62,17 +70,15 @@ export class AuthService {
     type: TypeOfVerificationCodeType
   }) {
     const vevificationCode = await this.authRepository.findUniqueVerificationCode({
-      email_code_type: {
-        email,
-        code,
-        type,
-      },
+      email,
+      code,
+      type,
     })
     if (!vevificationCode) {
       throw AuthError.InvalidOTP
     }
     if (vevificationCode.expiresAt < new Date()) {
-      await this.authRepository.deleteVerificationCode({ id: vevificationCode.id })
+      await this.authRepository.deleteVerificationCode({ email, code, type })
       throw AuthError.OTPExpired
     }
     return vevificationCode
@@ -86,23 +92,22 @@ export class AuthService {
       })
       const clientRoleId = await this.rolesService.getClientRoleId()
       const hashedPassword = await this.hashingService.hash(body.password)
-      const [user] = await Promise.all([
-        this.authRepository.createUser({
-          email: body.email,
-          name: body.name,
-          phoneNumber: body.phoneNumber,
-          password: hashedPassword,
-          roleId: clientRoleId,
-        }),
-        this.authRepository.deleteVerificationCode({
-          email_code_type: {
-            email: body.email,
-            code: body.code,
-            type: TypeOfVerificationCode.REGISTER,
-          },
-        }),
-      ])
-      return user
+
+      const user = await this.sharedUserRepository.create({
+        ...body,
+        password: hashedPassword,
+        roleId: clientRoleId,
+      })
+
+      await this.authRepository.deleteVerificationCode({
+        email: body.email,
+        code: body.code,
+        type: TypeOfVerificationCode.REGISTER,
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { password, totpSecret, ...userWithoutSensitiveData } = user
+      return userWithoutSensitiveData
     } catch (error) {
       if (isUniqueConstraintPrismaError(error)) {
         throw AuthError.EmailAlreadyExists
@@ -112,9 +117,7 @@ export class AuthService {
   }
 
   async sendOTP(body: SendOTPBodyType) {
-    const user = await this.sharedUserRepository.findUnique({
-      email: body.email,
-    })
+    const user = await this.sharedUserRepository.findByEmail(body.email)
     if (body.type === TypeOfVerificationCode.REGISTER && user) {
       throw AuthError.EmailAlreadyExists
     }
@@ -140,38 +143,38 @@ export class AuthService {
 
   async login(body: LoginBodyType & { userAgent: string; ip: string }, res: Response) {
     // 1. Lấy thông tin user, kiểm tra user có tồn tại hay không, mật khẩu có đúng không
-    const userWithCount = await this.authRepository.findUniqueUserIncludeRole({
-      email: body.email,
-    })
+    const user = await this.sharedUserRepository.findByEmail(body.email)
 
-    if (!userWithCount) {
+    if (!user) {
       throw AuthError.EmailNotFound
     }
 
-    const isPasswordMatch = await this.hashingService.compare(body.password, userWithCount.password)
+    const isPasswordMatch = await this.hashingService.compare(body.password, user.password)
     if (!isPasswordMatch) {
       throw AuthError.InvalidPassword
     }
+
+    if (user.status !== 'ACTIVE') {
+      throw AuthError.UserNotActive
+    }
+
     // 2. Nếu user đã bật mã 2FA thì kiểm tra mã 2FA TOTP Code hoặc OTP Code (email)
-    if (userWithCount.totpSecret) {
-      // Nếu không có mã TOTP Code và Code thì thông báo cho client biết
+    if (user.totpSecret) {
       if (!body.totpCode && !body.code) {
         throw AuthError.InvalidTOTPAndCode
       }
 
-      // Kiểm tra TOTP Code có hợp lệ hay không
       if (body.totpCode) {
         const isValid = this.twoFactorService.verifyTOTP({
-          secret: userWithCount.totpSecret,
+          secret: user.totpSecret,
           token: body.totpCode,
         })
         if (!isValid) {
           throw AuthError.InvalidTOTP
         }
       } else if (body.code) {
-        // Kiểm tra mã OTP có hợp lệ không
         await this.validateVerificationCode({
-          email: userWithCount.email,
+          email: user.email,
           code: body.code,
           type: TypeOfVerificationCode.LOGIN,
         })
@@ -183,12 +186,12 @@ export class AuthService {
 
     // 4. Upsert (tạo hoặc cập nhật) thiết bị
     const device = await this.authRepository.upsertDevice({
-      userId: userWithCount.id,
+      userId: user.id,
       lastIp: body.ip,
       browser: parsedUserAgent.browser,
       os: parsedUserAgent.os,
       type: parsedUserAgent.deviceType,
-      // fingerprint sẽ được triển khai ở giai đoạn sau để tăng độ chính xác
+      name: parsedUserAgent.deviceName,
     })
 
     // 5. Tính toán thời gian hết hạn cho Refresh Token
@@ -197,7 +200,7 @@ export class AuthService {
 
     // 6. Tạo một phiên đăng nhập (session) mới
     const session = await this.authRepository.createSession({
-      userId: userWithCount.id,
+      userId: user.id,
       deviceId: device.id,
       ipAddress: body.ip,
       userAgent: body.userAgent,
@@ -205,18 +208,20 @@ export class AuthService {
     })
 
     // 7. Tạo mới accessToken và refreshToken với sessionId
+    const userRole = await this.rolesService.getRoleById(user.roleId)
     const { accessToken, refreshToken } = await this.generateTokens({
-      userId: userWithCount.id,
+      userId: user.id,
       sessionId: session.id,
-      roleId: userWithCount.roleId,
-      roleName: userWithCount.role.name,
+      roleId: user.roleId,
+      roleName: userRole?.name || 'Client',
     })
 
     // 8. Set tokens vào cookie, có kiểm tra "rememberMe"
     this.cookieService.setTokenCookies(res, accessToken, refreshToken, body.rememberMe)
 
     // 9. Bỏ các trường nhạy cảm khỏi object user trả về
-    const { password, totpSecret, _count, ...userWithoutSensitiveData } = userWithCount
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, totpSecret, ...userWithoutSensitiveData } = user
     return userWithoutSensitiveData
   }
 
@@ -236,7 +241,7 @@ export class AuthService {
     return { accessToken, refreshToken }
   }
 
-  async refreshToken({ refreshToken, userAgent, ip, res }: RefreshTokenInput) {
+  async refreshToken({ refreshToken, res }: RefreshTokenInput) {
     if (!refreshToken) {
       this.cookieService.clearTokenCookies(res)
       throw AuthError.RefreshTokenRequired
@@ -266,7 +271,6 @@ export class AuthService {
       this.cookieService.clearTokenCookies(res)
       throw AuthError.InvalidRefreshToken // Lỗi chung cho các trường hợp không hợp lệ
     }
-    // `findValidSessionById` đã kiểm tra revokedAt và expiresAt
 
     if (session.user.revokedAllSessionsBefore && session.createdAt < session.user.revokedAllSessionsBefore) {
       this.cookieService.clearTokenCookies(res)
@@ -290,7 +294,7 @@ export class AuthService {
     // 6. Set cookie mới
     this.cookieService.setTokenCookies(res, tokens.accessToken, tokens.refreshToken, true)
 
-    res.status(HttpStatus.OK).send({ message: 'auth.success.REFRESH_TOKEN_SUCCESS' })
+    res.status(200).send({ message: 'auth.success.REFRESH_TOKEN_SUCCESS' })
   }
 
   async logout(refreshToken: string | undefined, res: Response) {
@@ -299,15 +303,13 @@ export class AuthService {
         const { sessionId, exp, jti } = await this.tokenService.verifyRefreshToken(refreshToken)
         const remainingTime = exp - Math.floor(Date.now() / 1000)
 
-        // Hành động chính: Vô hiệu hóa session trong DB
         await this.authRepository.revokeSession(sessionId)
 
-        // Hành động phụ: Blacklist JTI trong Redis để có hiệu lực tức thì
         if (remainingTime > 0) {
           await this.sessionService.addToBlacklist(jti, remainingTime)
         }
       } catch (error) {
-        // Bỏ qua lỗi nếu token không hợp lệ, vì mục tiêu là đăng xuất
+        // Ignored
       }
     }
 
@@ -317,9 +319,8 @@ export class AuthService {
 
   async forgotPassword(body: ForgotPasswordBodyType) {
     const { email } = body
-    const user = await this.sharedUserRepository.findUnique({ email })
+    const user = await this.sharedUserRepository.findByEmail(email)
     if (!user) {
-      // Don't reveal that the user does not exist
       return { message: 'auth.success.FORGOT_PASSWORD_SENT' }
     }
     const code = generateOTP()
@@ -337,21 +338,15 @@ export class AuthService {
   }
 
   async setupTwoFactorAuth(userId: number) {
-    // 1. Lấy thông tin user, kiểm tra xem user có tồn tại hay không, và xem họ đã bật 2FA chưa
-    const user = await this.sharedUserRepository.findUnique({
-      id: userId,
-    })
+    const user = await this.sharedUserRepository.findById(userId)
     if (!user) {
       throw AuthError.UserNotFound
     }
     if (user.totpSecret) {
       throw AuthError.TOTPAlreadyEnabled
     }
-    // 2. Tạo ra secret và uri
     const { secret, uri } = this.twoFactorService.generateTOTPSecret(user.email)
-    // 3. Cập nhật secret vào user trong database
-    await this.authRepository.updateUser({ id: userId }, { totpSecret: secret })
-    // 4. Trả về secret và uri
+    await this.sharedUserRepository.update(userId, { totpSecret: secret })
     return {
       secret,
       uri,
@@ -360,8 +355,7 @@ export class AuthService {
 
   async disableTwoFactorAuth(data: DisableTwoFactorBodyType & { userId: number }) {
     const { userId, totpCode, code } = data
-    // 1. Lấy thông tin user, kiểm tra xem user có tồn tại hay không, và xem họ đã bật 2FA chưa
-    const user = await this.sharedUserRepository.findUnique({ id: userId })
+    const user = await this.sharedUserRepository.findById(userId)
     if (!user) {
       throw AuthError.UserNotFound
     }
@@ -369,7 +363,6 @@ export class AuthService {
       throw AuthError.TOTPNotEnabled
     }
 
-    // 2. Kiểm tra mã TOTP có hợp lệ hay không
     if (totpCode) {
       const isValid = this.twoFactorService.verifyTOTP({
         secret: user.totpSecret,
@@ -379,21 +372,17 @@ export class AuthService {
         throw AuthError.InvalidTOTP
       }
     } else if (code) {
-      // 3. Kiểm tra mã OTP email có hợp lệ hay không
       await this.validateVerificationCode({
         email: user.email,
         code,
         type: TypeOfVerificationCode.DISABLE_2FA,
       })
     } else {
-      // Nếu không có mã nào được cung cấp
       throw AuthError.Disable2FARequiresCode
     }
 
-    // 4. Cập nhật secret thành null
-    await this.authRepository.updateUser({ id: userId }, { totpSecret: null })
+    await this.sharedUserRepository.update(userId, { totpSecret: null })
 
-    // 5. Trả về thông báo
     return {
       message: 'auth.success.DISABLE_2FA_SUCCESS',
     }

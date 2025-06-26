@@ -2,12 +2,12 @@ import { Inject, Injectable } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { IRedisService } from '../providers/redis/redis.interface'
 import { RedisKeyManager } from '../providers/redis/redis-key.manager'
-import { REDIS_SERVICE } from '../providers/redis/redis.constants'
+import * as tokens from 'src/shared/constants/injection.tokens'
 
 @Injectable()
 export class SessionService {
   constructor(
-    @Inject(REDIS_SERVICE) private readonly redis: IRedisService,
+    @Inject(tokens.REDIS_SERVICE) private readonly redis: IRedisService,
     private readonly configService: ConfigService,
   ) {}
 

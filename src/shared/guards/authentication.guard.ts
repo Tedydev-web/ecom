@@ -1,22 +1,25 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common'
+import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, Inject } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { AuthType, ConditionGuard } from 'src/shared/constants/auth.constant'
 import { AUTH_TYPE_KEY, AuthTypeDecoratorPayload } from 'src/shared/decorators/auth.decorator'
 import { AccessTokenGuard } from 'src/shared/guards/access-token.guard'
 import { APIKeyGuard } from 'src/shared/guards/api-key.guard'
+import * as tokens from 'src/shared/constants/injection.tokens'
 
 @Injectable()
 export class AuthenticationGuard implements CanActivate {
-  private readonly authTypeGuardMap: Record<string, CanActivate> = {
+  private readonly authTypeGuardMap: Record<string, CanActivate>
+  constructor(
+    private readonly reflector: Reflector,
+    @Inject(tokens.ACCESS_TOKEN_GUARD) private readonly accessTokenGuard: AccessTokenGuard,
+    @Inject(tokens.API_KEY_GUARD) private readonly apiKeyGuard: APIKeyGuard,
+  ) {
+    this.authTypeGuardMap = {
     [AuthType.Bearer]: this.accessTokenGuard,
     [AuthType.APIKey]: this.apiKeyGuard,
     [AuthType.None]: { canActivate: () => true },
   }
-  constructor(
-    private readonly reflector: Reflector,
-    private readonly accessTokenGuard: AccessTokenGuard,
-    private readonly apiKeyGuard: APIKeyGuard,
-  ) {}
+  }
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const authTypeValue = this.reflector.getAllAndOverride<AuthTypeDecoratorPayload | undefined>(AUTH_TYPE_KEY, [
       context.getHandler(),

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, Inject } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { Response } from 'express'
 import { OAuth2Client } from 'google-auth-library'
@@ -13,6 +13,8 @@ import { HashingService } from 'src/shared/services/hashing.service'
 import { v4 as uuidv4 } from 'uuid'
 import { addMilliseconds } from 'date-fns'
 import { UserAgentService } from 'src/shared/services/user-agent.service'
+import * as tokens from 'src/shared/constants/injection.tokens'
+import { SharedUserRepository } from 'src/shared/repositories/shared-user.repo'
 
 @Injectable()
 export class GoogleService {
@@ -22,12 +24,13 @@ export class GoogleService {
 
   constructor(
     private readonly authRepository: AuthRepository,
-    private readonly hashingService: HashingService,
+    @Inject(tokens.HASHING_SERVICE) private readonly hashingService: HashingService,
     private readonly rolesService: RolesService,
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
-    private readonly cookieService: CookieService,
-    private readonly userAgentService: UserAgentService,
+    @Inject(tokens.COOKIE_SERVICE) private readonly cookieService: CookieService,
+    @Inject(tokens.USER_AGENT_SERVICE) private readonly userAgentService: UserAgentService,
+    @Inject(tokens.SHARED_USER_REPOSITORY) private readonly sharedUserRepository: SharedUserRepository,
   ) {
     this.oauth2Client = new google.auth.OAuth2(
       this.configService.get<string>('google.clientId'),
@@ -82,15 +85,13 @@ export class GoogleService {
       }
 
       // 4. Tìm hoặc tạo user
-      let user = await this.authRepository.findUniqueUserIncludeRole({
-        email: googleUser.email,
-      })
+      let user = await this.sharedUserRepository.findByEmail(googleUser.email)
 
       if (!user) {
         const clientRoleId = await this.rolesService.getClientRoleId()
         const randomPassword = uuidv4()
         const hashedPassword = await this.hashingService.hash(randomPassword)
-        const createdUser = await this.authRepository.createUserInclueRole({
+        user = await this.sharedUserRepository.create({
           email: googleUser.email,
           name: googleUser.name ?? '',
           password: hashedPassword,
@@ -98,18 +99,9 @@ export class GoogleService {
           phoneNumber: '',
           avatar: googleUser.picture ?? null,
         })
-        // Manually add _count to satisfy the type checker, as createUserInclueRole does not return it.
-        user = {
-          ...createdUser,
-          _count: {
-            sessions: 0,
-            devices: 0,
-          },
-        }
       }
 
       if (!user) {
-        // This check is for type safety, though logic above ensures user is defined.
         throw AuthError.UserNotFound
       }
 
@@ -123,6 +115,7 @@ export class GoogleService {
         browser: parsedUserAgent.browser,
         os: parsedUserAgent.os,
         type: parsedUserAgent.deviceType,
+        name: parsedUserAgent.deviceName,
       })
 
       // 7. Tính toán thời gian hết hạn cho Refresh Token
@@ -139,11 +132,12 @@ export class GoogleService {
       })
 
       // 9. Tạo mới accessToken và refreshToken với sessionId
+      const userRole = await this.rolesService.getRoleById(user.roleId)
       const { accessToken, refreshToken } = await this.authService.generateTokens({
         userId: user.id,
         sessionId: session.id,
         roleId: user.roleId,
-        roleName: user.role.name,
+        roleName: userRole?.name || 'Client',
       })
 
       // 10. Set cookies. Google login is like "remember me" by default.

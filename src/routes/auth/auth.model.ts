@@ -90,11 +90,15 @@ export const RefreshTokenResSchema = LoginResSchema
 export const DeviceSchema = z.object({
   id: z.number(),
   userId: z.number(),
-  userAgent: z.string(),
-  ip: z.string(),
-  lastActive: z.date(),
+  fingerprint: z.string().nullable(),
+  name: z.string(),
+  type: z.string(),
+  os: z.string(),
+  browser: z.string(),
+  lastIp: z.string(),
+  lastActiveAt: z.date(),
+  isTrusted: z.boolean(),
   createdAt: z.date(),
-  isActive: z.boolean(),
   updatedAt: z.date(),
 })
 
@@ -123,9 +127,9 @@ export const LogoutBodySchema = z.object({
   // refreshToken sẽ được đọc từ cookie, body này sẽ trống
 })
 
-export const GoogleAuthStateSchema = DeviceSchema.pick({
-  userAgent: true,
-  ip: true,
+export const GoogleAuthStateSchema = z.object({
+  userAgent: z.string(),
+  ip: z.string(),
 })
 
 export const GetAuthorizationUrlResSchema = z.object({
@@ -172,10 +176,25 @@ export const DisableTwoFactorBodySchema = z
       })
     }
   })
+
 export const TwoFactorSetupResSchema = z.object({
   secret: z.string(),
   uri: z.string(),
 })
+
+export const SessionSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.number().int(),
+  deviceId: z.number().int(),
+  ipAddress: z.string(),
+  userAgent: z.string(),
+  lastActiveAt: z.date(),
+  revokedAt: z.date().nullable(),
+  expiresAt: z.date(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+})
+
 export type RegisterBodyType = z.infer<typeof RegisterBodySchema>
 export type RegisterResType = z.infer<typeof RegisterResSchema>
 export type VerificationCodeType = z.infer<typeof VerificationCodeSchema>
@@ -193,3 +212,4 @@ export type GetAuthorizationUrlResType = z.infer<typeof GetAuthorizationUrlResSc
 export type ForgotPasswordBodyType = z.infer<typeof ForgotPasswordBodySchema>
 export type DisableTwoFactorBodyType = z.infer<typeof DisableTwoFactorBodySchema>
 export type TwoFactorSetupResType = z.infer<typeof TwoFactorSetupResSchema>
+export type SessionType = z.infer<typeof SessionSchema>

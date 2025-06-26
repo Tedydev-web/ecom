@@ -1,4 +1,4 @@
-import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus, Logger } from '@nestjs/common'
+import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus, Logger, Inject } from '@nestjs/common'
 import { HttpAdapterHost } from '@nestjs/core'
 import { I18nService, I18nContext } from 'nestjs-i18n'
 import { ApiException } from 'src/shared/exceptions/api.exception'
@@ -6,6 +6,7 @@ import { Response, Request } from 'express'
 import { I18nTranslations } from 'src/generated/i18n.generated'
 import { ZodError } from 'zod'
 import { CookieService } from '../services/cookie.service'
+import * as tokens from 'src/shared/constants/injection.tokens'
 
 interface IErrorResponse {
   success: false
@@ -22,7 +23,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
   constructor(
     private readonly httpAdapterHost: HttpAdapterHost,
     private readonly i18n: I18nService<I18nTranslations>,
-    private readonly cookieService: CookieService,
+    @Inject(tokens.COOKIE_SERVICE) private readonly cookieService: CookieService,
   ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
@@ -37,7 +38,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let message: string
     let details: any
 
-    if (exception instanceof ApiException) {
+    if (exception && (exception as any).code === 'EBADCSRFTOKEN') {
+      statusCode = HttpStatus.FORBIDDEN
+      code = 'INVALID_CSRF_TOKEN'
+      message = this.i18n.t('global.error.INVALID_CSRF_TOKEN' as any, { lang })
+      details = 'CSRF token is invalid or missing.'
+    } else if (exception instanceof ApiException) {
       statusCode = exception.getStatus()
       code = exception.code
       message = this.i18n.t(exception.message as any, {

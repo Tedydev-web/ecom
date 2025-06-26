@@ -1,50 +1,46 @@
-import { Injectable, NestMiddleware, ForbiddenException, Logger } from '@nestjs/common'
-import { ConfigService } from '@nestjs/config'
+import { Injectable, NestMiddleware, Logger } from '@nestjs/common'
 import { Request, Response, NextFunction } from 'express'
-import { randomBytes } from 'crypto'
-import { CookieService } from 'src/shared/services/cookie.service'
-import { CookieNames } from 'src/shared/constants/cookie.constant'
-import { InvalidCsrfTokenException } from 'src/routes/auth/csrf.error'
+import csurf from 'csurf'
+import { ConfigService } from '@nestjs/config'
 
 @Injectable()
 export class CsrfProtectionMiddleware implements NestMiddleware {
   private readonly logger = new Logger(CsrfProtectionMiddleware.name)
-  private readonly csrfHeaderName: string
-  private readonly csrfSecretLength: number
-  private readonly safeMethods = ['GET', 'HEAD', 'OPTIONS']
+  private readonly csurfProtection: (req: Request, res: Response, next: NextFunction) => void
 
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly cookieService: CookieService,
-  ) {
-    this.csrfHeaderName = this.configService.get<string>('csrf.headerName')!
-    this.csrfSecretLength = this.configService.get<number>('csrf.secretLength')!
+  constructor(private readonly configService: ConfigService) {
+    this.csurfProtection = csurf({
+      cookie: {
+        httpOnly: true,
+        secure: this.configService.get<boolean>('cookie.secure'),
+        sameSite: this.configService.get('cookie.sameSite'),
+        path: this.configService.get<string>('cookie.path'),
+        domain: this.configService.get<string>('cookie.domain'),
+      },
+      value: (req: Request) => {
+        // Hỗ trợ cả hai header phổ biến mà các framework frontend hay dùng
+        return (req.headers['x-csrf-token'] || req.headers['x-xsrf-token']) as string
+      },
+    })
   }
 
   use(req: Request, res: Response, next: NextFunction) {
-    let csrfToken = req.cookies[CookieNames.CSRF_TOKEN]
-
-    if (!csrfToken) {
-      csrfToken = randomBytes(this.csrfSecretLength).toString('hex')
-      this.cookieService.setCsrfCookie(res, csrfToken)
-    }
-
-    if (this.safeMethods.includes(req.method)) {
-      return next()
-    }
-
-    const tokenFromHeader = req.headers[this.csrfHeaderName] as string
-
-    if (!tokenFromHeader) {
-      this.logger.warn(`CSRF token missing from header for ${req.method} ${req.originalUrl}`)
-      throw InvalidCsrfTokenException
-    }
-
-    if (tokenFromHeader !== csrfToken) {
-      this.logger.warn(`Invalid CSRF token for ${req.method} ${req.originalUrl}`)
-      throw InvalidCsrfTokenException
-    }
-
-    next()
+    this.csurfProtection(req, res, (err: any) => {
+      if (err) {
+        this.logger.warn(`Invalid CSRF token: ${err.code}`, { url: req.originalUrl })
+        // Thay vì throw ForbiddenException, chúng ta sẽ để cho AllExceptionsFilter xử lý
+        return next(err)
+      }
+      const token = req.csrfToken()
+      // Set cookie XSRF-TOKEN mà client có thể đọc được để gửi lại trong header
+      res.cookie('XSRF-TOKEN', token, {
+        secure: this.configService.get<boolean>('cookie.secure'),
+        sameSite: this.configService.get('cookie.sameSite'),
+        path: this.configService.get<string>('cookie.path'),
+        domain: this.configService.get<string>('cookie.domain'),
+        httpOnly: false, // Quan trọng: Phải là false để JS ở client đọc được
+      })
+      next()
+    })
   }
-} 
+}

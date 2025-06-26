@@ -13,12 +13,15 @@ import { TwoFactorService } from 'src/shared/services/2fa.service'
 import { CookieService } from './services/cookie.service'
 import { ConfigModule, ConfigService } from '@nestjs/config'
 import { RedisService } from './providers/redis/redis.service'
-import { IORedisKey, REDIS_SERVICE } from './providers/redis/redis.constants'
+import { IORedisKey } from './providers/redis/redis.constants'
 import Redis from 'ioredis'
 import { Logger } from '@nestjs/common'
 import { CryptoService } from './services/crypto.service'
 import { SessionService } from './services/session.service'
 import { UserAgentService } from './services/user-agent.service'
+import * as tokens from './constants/injection.tokens'
+import { SecurityHeadersMiddleware } from './middleware/security-headers.middleware'
+import { CsrfProtectionMiddleware } from './middleware/csrf.middleware'
 
 const redisClientProvider = {
   provide: IORedisKey,
@@ -45,7 +48,8 @@ const redisClientProvider = {
   inject: [ConfigService],
 }
 
-const sharedServices = [
+// Danh sách các class service để NestJS có thể khởi tạo chúng
+const serviceClasses = [
   PrismaService,
   HashingService,
   TokenService,
@@ -56,25 +60,55 @@ const sharedServices = [
   CryptoService,
   SessionService,
   UserAgentService,
+  RedisService,
+]
+
+// Thêm middleware vào danh sách các class để NestJS quản lý
+const middlewareClasses = [CsrfProtectionMiddleware, SecurityHeadersMiddleware]
+
+// Danh sách các providers sử dụng token, tuân thủ nguyên tắc Dependency Inversion
+const tokenProviders = [
+  { provide: tokens.PRISMA_SERVICE, useClass: PrismaService },
+  { provide: tokens.HASHING_SERVICE, useClass: HashingService },
+  { provide: tokens.TOKEN_SERVICE, useClass: TokenService },
+  { provide: tokens.EMAIL_SERVICE, useClass: EmailService },
+  { provide: tokens.SHARED_USER_REPOSITORY, useClass: SharedUserRepository },
+  { provide: tokens.TWO_FACTOR_SERVICE, useClass: TwoFactorService },
+  { provide: tokens.COOKIE_SERVICE, useClass: CookieService },
+  { provide: tokens.CRYPTO_SERVICE, useClass: CryptoService },
+  { provide: tokens.SESSION_SERVICE, useClass: SessionService },
+  { provide: tokens.USER_AGENT_SERVICE, useClass: UserAgentService },
+  { provide: tokens.REDIS_SERVICE, useClass: RedisService },
+]
+
+const guardClasses = [AccessTokenGuard, APIKeyGuard, AuthenticationGuard]
+
+const allProviders = [
+  ...serviceClasses,
+  ...middlewareClasses,
+  ...tokenProviders,
+  ...guardClasses,
+  redisClientProvider,
   {
-    provide: REDIS_SERVICE,
-    useClass: RedisService,
+    provide: APP_GUARD,
+    useClass: AuthenticationGuard,
   },
+  { provide: tokens.ACCESS_TOKEN_GUARD, useClass: AccessTokenGuard },
+  { provide: tokens.API_KEY_GUARD, useClass: APIKeyGuard },
 ]
 
 @Global()
 @Module({
   imports: [JwtModule, ConfigModule],
-  providers: [
-    ...sharedServices,
-    AccessTokenGuard,
-    APIKeyGuard,
-    redisClientProvider,
-    {
-      provide: APP_GUARD,
-      useClass: AuthenticationGuard,
-    },
+  providers: allProviders,
+  exports: [
+    ...serviceClasses,
+    ...middlewareClasses,
+    ...tokenProviders,
+    ...guardClasses,
+    tokens.ACCESS_TOKEN_GUARD,
+    tokens.API_KEY_GUARD,
+    tokens.PRISMA_SERVICE,
   ],
-  exports: [...sharedServices],
 })
 export class SharedModule {}

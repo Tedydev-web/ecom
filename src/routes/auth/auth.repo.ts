@@ -1,110 +1,82 @@
-import { Injectable } from '@nestjs/common'
-import { Device, Session } from '@prisma/client'
-import { DeviceType, RegisterBodyType, RoleType, VerificationCodeType } from 'src/routes/auth/auth.model'
+import { Inject, Injectable } from '@nestjs/common'
+import { DeviceType, RoleType, SessionType, VerificationCodeType } from 'src/routes/auth/auth.model'
 import { TypeOfVerificationCodeType } from 'src/shared/constants/auth.constant'
+import * as tokens from 'src/shared/constants/injection.tokens'
 import { UserType } from 'src/shared/models/shared-user.model'
 import { PrismaService } from 'src/shared/services/prisma.service'
 
-export type UpsertDeviceData = Pick<Device, 'userId' | 'lastIp'> &
-  Partial<Pick<Device, 'fingerprint' | 'name' | 'type' | 'os' | 'browser'>>
+export type UpsertDeviceData = Pick<DeviceType, 'userId' | 'lastIp'> &
+  Partial<Pick<DeviceType, 'fingerprint' | 'name' | 'type' | 'os' | 'browser'>>
 
-export type CreateSessionData = Pick<Session, 'userId' | 'deviceId' | 'ipAddress' | 'userAgent' | 'expiresAt'>
+export type CreateSessionData = Pick<SessionType, 'userId' | 'deviceId' | 'ipAddress' | 'userAgent' | 'expiresAt'>
+export type ValidSessionWithUser = SessionType & { user: UserType & { role: RoleType } }
 
 @Injectable()
 export class AuthRepository {
-  constructor(private readonly prismaService: PrismaService) {}
-
-  async createUser(
-    user: Pick<UserType, 'email' | 'name' | 'password' | 'phoneNumber' | 'roleId'>,
-  ): Promise<Omit<UserType, 'password' | 'totpSecret'>> {
-    return this.prismaService.user.create({
-      data: user,
-      omit: {
-        password: true,
-        totpSecret: true,
-      },
-    })
-  }
-
-  async createUserInclueRole(
-    user: Pick<UserType, 'email' | 'name' | 'password' | 'phoneNumber' | 'avatar' | 'roleId'>,
-  ): Promise<UserType & { role: RoleType }> {
-    return this.prismaService.user.create({
-      data: user,
-      include: {
-        role: true,
-      },
-    })
-  }
+  constructor(@Inject(tokens.PRISMA_SERVICE) private readonly prismaService: PrismaService) {}
 
   async createVerificationCode(
     payload: Pick<VerificationCodeType, 'email' | 'type' | 'code' | 'expiresAt'>,
   ): Promise<VerificationCodeType> {
-    return this.prismaService.verificationCode.upsert({
+    return await this.prismaService.verificationCode.create({
+      data: payload,
+    })
+  }
+
+  async findUniqueVerificationCode(uniqueValue: {
+    email: string
+    code: string
+    type: TypeOfVerificationCodeType
+  }): Promise<VerificationCodeType | null> {
+    return await this.prismaService.verificationCode.findUnique({
       where: {
-        email_code_type: {
-          email: payload.email,
-          code: payload.code,
-          type: payload.type,
-        },
+        email_code_type: uniqueValue,
       },
-      create: payload,
+    })
+  }
+
+  async deleteVerificationCode(uniqueValue: {
+    email: string
+    code: string
+    type: TypeOfVerificationCodeType
+  }): Promise<VerificationCodeType> {
+    return await this.prismaService.verificationCode.delete({
+      where: {
+        email_code_type: uniqueValue,
+      },
+    })
+  }
+
+  async upsertDevice(data: UpsertDeviceData): Promise<DeviceType> {
+    const { userId, lastIp, fingerprint, ...deviceInfo } = data
+    const where = fingerprint ? { fingerprint } : { userId, name: deviceInfo.name || 'Unknown' }
+
+    const device = await this.prismaService.device.upsert({
+      where: where as any,
+      create: {
+        userId,
+        lastIp,
+        fingerprint,
+        name: deviceInfo.name || 'Unknown',
+        type: deviceInfo.type || 'Unknown',
+        os: deviceInfo.os || 'Unknown',
+        browser: deviceInfo.browser || 'Unknown',
+      },
       update: {
-        code: payload.code,
-        expiresAt: payload.expiresAt,
+        lastIp,
+        lastActiveAt: new Date(),
       },
     })
+
+    return device as DeviceType
   }
 
-  async findUniqueVerificationCode(
-    uniqueValue:
-      | { id: number }
-      | {
-          email_code_type: {
-            email: string
-            code: string
-            type: TypeOfVerificationCodeType
-          }
-        },
-  ): Promise<VerificationCodeType | null> {
-    return this.prismaService.verificationCode.findUnique({
-      where: uniqueValue,
-    })
+  async createSession(data: CreateSessionData): Promise<SessionType> {
+    return await this.prismaService.session.create({ data })
   }
 
-  async upsertDevice(data: UpsertDeviceData): Promise<Device> {
-    const now = new Date()
-    const deviceData = {
-      userId: data.userId,
-      fingerprint: data.fingerprint,
-      name: data.name,
-      type: data.type,
-      os: data.os,
-      browser: data.browser,
-      lastIp: data.lastIp,
-      lastActiveAt: now,
-    }
-
-    if (data.fingerprint) {
-      return this.prismaService.device.upsert({
-        where: { fingerprint: data.fingerprint },
-        create: deviceData,
-        update: {
-          lastIp: data.lastIp,
-          lastActiveAt: now,
-        },
-      })
-    }
-
-    return this.prismaService.device.create({ data: deviceData })
-  }
-
-  async createSession(data: CreateSessionData): Promise<Session> {
-    return this.prismaService.session.create({ data })
-  }
-
-  async findValidSessionById(id: string): Promise<(Session & { user: UserType & { role: RoleType } }) | null> {
-    return this.prismaService.session.findFirst({
+  async findValidSessionById(id: string): Promise<ValidSessionWithUser | null> {
+    const session = await this.prismaService.session.findFirst({
       where: {
         id,
         revokedAt: null,
@@ -120,57 +92,20 @@ export class AuthRepository {
         },
       },
     })
+    return session as ValidSessionWithUser | null
   }
 
-  async updateSessionLastActive(id: string): Promise<Session> {
-    return this.prismaService.session.update({
+  async updateSessionLastActive(id: string): Promise<SessionType> {
+    return await this.prismaService.session.update({
       where: { id },
       data: { lastActiveAt: new Date() },
     })
   }
 
-  async revokeSession(id: string): Promise<Session> {
-    return this.prismaService.session.update({
+  async revokeSession(id: string): Promise<SessionType> {
+    return await this.prismaService.session.update({
       where: { id },
       data: { revokedAt: new Date() },
-    })
-  }
-
-  async findUniqueUserIncludeRole(uniqueObject: { email: string } | { id: number }) {
-    return this.prismaService.user.findUnique({
-      where: uniqueObject,
-      include: {
-        role: true,
-        _count: {
-          select: {
-            sessions: { where: { revokedAt: null, expiresAt: { gte: new Date() } } },
-            devices: true,
-          },
-        },
-      },
-    })
-  }
-
-  updateUser(where: { id: number } | { email: string }, data: Partial<Omit<UserType, 'id'>>): Promise<UserType> {
-    return this.prismaService.user.update({
-      where,
-      data,
-    })
-  }
-
-  deleteVerificationCode(
-    uniqueValue:
-      | { id: number }
-      | {
-          email_code_type: {
-            email: string
-            code: string
-            type: TypeOfVerificationCodeType
-          }
-        },
-  ): Promise<VerificationCodeType> {
-    return this.prismaService.verificationCode.delete({
-      where: uniqueValue,
     })
   }
 }
