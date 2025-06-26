@@ -1,83 +1,81 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { CookieOptions, Response } from 'express'
-import { CookieNames } from '../constants/cookie.constant'
+
+// Định nghĩa một kiểu dữ liệu cho các key của các cookie đã được cấu hình.
+// Điều này giúp tăng cường type-safety và tự động gợi ý code.
+export type CookieDefinitionKey = 'accessToken' | 'refreshToken' | 'csrfSecret' | 'csrfToken'
 
 @Injectable()
 export class CookieService {
   private readonly logger = new Logger(CookieService.name)
-  private readonly accessTokenCookieName: string = CookieNames.ACCESS_TOKEN
-  private readonly refreshTokenCookieName: string = CookieNames.REFRESH_TOKEN
-  private readonly csrfCookieName: string = CookieNames.CSRF_TOKEN
-  private readonly baseOptions: Omit<CookieOptions, 'maxAge'>
 
-  constructor(private readonly configService: ConfigService) {
-    this.baseOptions = {
-      httpOnly: this.configService.get<boolean>('cookie.httpOnly'),
-      secure: this.configService.get<boolean>('cookie.secure'),
-      sameSite: this.configService.get('cookie.sameSite'),
-      path: this.configService.get<string>('cookie.path'),
-      domain: this.configService.get<string>('cookie.domain'),
+  constructor(private readonly configService: ConfigService) {}
+
+  /**
+   * Phương thức chung để thiết lập bất kỳ cookie nào đã được định nghĩa trong file cấu hình.
+   * Tự động xử lý các prefix bảo mật (__Host-) và tất cả các tùy chọn khác.
+   * @param res Đối tượng Response của Express.
+   * @param key Tên logic của cookie (ví dụ: 'accessToken').
+   * @param value Giá trị của cookie.
+   * @param options Các tùy chọn bổ sung hoặc ghi đè lên cấu hình mặc định.
+   */
+  set(res: Response, key: CookieDefinitionKey, value: string, options: Partial<CookieOptions> = {}): void {
+    const definition = this.configService.get(`cookie.definitions.${key}`)
+    if (!definition) {
+      this.logger.error(`Không tìm thấy cấu hình cho cookie với key: "${key}".`)
+      return
     }
+
+    const cookieName = `${definition.prefix}${definition.name}`
+    const finalOptions = { ...definition.options, ...options }
+
+    res.cookie(cookieName, value, finalOptions)
   }
 
-  private setCookie(res: Response, name: string, value: string, options: CookieOptions): void {
-    res.cookie(name, value, options)
+  /**
+   * Phương thức chung để xóa bất kỳ cookie nào đã được định nghĩa.
+   * @param res Đối tượng Response của Express.
+   * @param key Tên logic của cookie cần xóa.
+   */
+  clear(res: Response, key: CookieDefinitionKey): void {
+    const definition = this.configService.get(`cookie.definitions.${key}`)
+    if (!definition) {
+      this.logger.error(`Không tìm thấy cấu hình cho cookie với key: "${key}".`)
+      return
+    }
+
+    const cookieName = `${definition.prefix}${definition.name}`
+    // Để xóa cookie, phải cung cấp chính xác path và domain đã dùng để set.
+    const clearOptions = {
+      path: definition.options.path,
+      domain: definition.options.domain,
+    }
+    res.clearCookie(cookieName, clearOptions)
   }
 
-  private clearCookie(res: Response, name: string): void {
-    res.clearCookie(name, {
-      path: this.baseOptions.path,
-      domain: this.baseOptions.domain,
-    })
-  }
+  // --- Các phương thức tiện ích ---
 
-  setCsrfCookie(res: Response, csrfToken: string): void {
-    this.setCookie(res, this.csrfCookieName, csrfToken, {
-      ...this.baseOptions,
-      httpOnly: false,
-      maxAge: this.configService.get<number>('cookie.refreshTokenMaxAge'),
-    })
-  }
+  /**
+   * Thiết lập cả hai cookie access và refresh token cùng một lúc.
+   */
+  setTokenCookies(res: Response, accessToken: string, refreshToken: string, rememberMe: boolean = false): void {
+    this.set(res, 'accessToken', accessToken)
 
-  setAccessTokenCookie(res: Response, accessToken: string): void {
-    this.setCookie(res, this.accessTokenCookieName, accessToken, {
-      ...this.baseOptions,
-      maxAge: this.configService.get<number>('cookie.maxAge'),
-    })
-  }
-
-  setRefreshTokenCookie(res: Response, refreshToken: string, rememberMe: boolean = false): void {
-    const maxAge = rememberMe
+    // Áp dụng logic "remember me" cho thời gian sống của refresh token
+    const refreshTokenMaxAge = rememberMe
       ? this.configService.get<number>('cookie.rememberMeMaxAge')
       : this.configService.get<number>('cookie.refreshTokenMaxAge')
 
-    this.setCookie(res, this.refreshTokenCookieName, refreshToken, {
-      ...this.baseOptions,
-      maxAge,
-    })
+    this.set(res, 'refreshToken', refreshToken, { maxAge: refreshTokenMaxAge })
   }
 
-  clearAccessTokenCookie(res: Response): void {
-    this.clearCookie(res, this.accessTokenCookieName)
-  }
-
-  clearRefreshTokenCookie(res: Response): void {
-    this.clearCookie(res, this.refreshTokenCookieName)
-  }
-
-  clearCsrfCookie(res: Response): void {
-    this.clearCookie(res, this.csrfCookieName)
-  }
-
-  setTokenCookies(res: Response, accessToken: string, refreshToken: string, rememberMe: boolean = false): void {
-    this.setAccessTokenCookie(res, accessToken)
-    this.setRefreshTokenCookie(res, refreshToken, rememberMe)
-  }
-
+  /**
+   * Xóa cả hai cookie access và refresh token.
+   */
   clearTokenCookies(res: Response): void {
-    this.clearAccessTokenCookie(res)
-    this.clearRefreshTokenCookie(res)
+    this.clear(res, 'accessToken')
+    this.clear(res, 'refreshToken')
   }
 }
  

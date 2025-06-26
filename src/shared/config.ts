@@ -2,6 +2,7 @@ import { registerAs } from '@nestjs/config'
 import { config } from 'dotenv'
 import { z } from 'zod'
 import ms from 'ms'
+import { CookieNames } from './constants/cookie.constant'
 
 config({
   path: '.env',
@@ -29,7 +30,7 @@ const JWTConfigSchema = z.object({
 })
 
 const CookieConfigSchema = z.object({
-  COOKIE_DOMAIN: z.string().optional(),
+  COOKIE_SECRET: z.string(),
 })
 
 const DatabaseConfigSchema = z.object({
@@ -106,19 +107,74 @@ export const jwt = registerAs('jwt', () => ({
   },
 }))
 
-export const cookie = registerAs('cookie', () => ({
-  httpOnly: true,
-  secure: validatedConfig.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
-  path: '/',
-  domain: validatedConfig.COOKIE_DOMAIN,
-  // Thời gian sống của cookie access token sẽ bằng với thời gian sống của access token
-  maxAge: ms(validatedConfig.ACCESS_TOKEN_EXPIRES_IN),
-  // Thời gian sống của cookie refresh token sẽ bằng với thời gian sống của refresh token
-  refreshTokenMaxAge: ms(validatedConfig.REFRESH_TOKEN_EXPIRES_IN),
-  // Cung cấp thêm một lựa chọn cho "remember me", ví dụ 30 ngày
-  rememberMeMaxAge: ms('30d'),
-}))
+export const cookie = registerAs('cookie', () => {
+  const isProd = validatedConfig.NODE_ENV === 'production'
+
+  // __Host- prefix yêu cầu Secure:true, Path:/ và không có Domain.
+  // Chúng ta sẽ bật "secure" cho tất cả cookie để tăng cường bảo mật.
+  const getBaseOptions = (prefix: '' | '__Host-') => {
+    const base = {
+      secure: true, // Bắt buộc cho __Host-. Chúng ta sẽ dùng cho tất cả cookie.
+      sameSite: 'lax' as const,
+    }
+
+    if (prefix === '__Host-') {
+      return {
+        ...base,
+        path: '/',
+        domain: undefined, // QUAN TRỌNG: __Host- cấm thuộc tính Domain.
+      }
+    }
+    return {
+      ...base,
+      path: '/',
+    }
+  }
+
+  return {
+    secret: validatedConfig.COOKIE_SECRET,
+    definitions: {
+      accessToken: {
+        name: CookieNames.ACCESS_TOKEN,
+        prefix: '', // Access token không dùng prefix vì có thể cần truy cập từ domain khác trong tương lai
+        options: {
+          ...getBaseOptions(''),
+          httpOnly: true,
+          maxAge: ms(validatedConfig.ACCESS_TOKEN_EXPIRES_IN),
+        },
+      },
+      refreshToken: {
+        name: CookieNames.REFRESH_TOKEN,
+        prefix: isProd ? '__Host-' : '', // Tiêu chuẩn vàng cho production
+        options: {
+          ...getBaseOptions(isProd ? '__Host-' : ''),
+          httpOnly: true,
+        },
+      },
+      csrfSecret: {
+        name: CookieNames.CSRF_SECRET,
+        prefix: isProd ? '__Host-' : '', // Tiêu chuẩn vàng cho production
+        options: {
+          ...getBaseOptions(isProd ? '__Host-' : ''),
+          httpOnly: true,
+          // Không có maxAge, đây là session cookie
+        },
+      },
+      csrfToken: {
+        name: CookieNames.CSRF_TOKEN,
+        prefix: '', // JS phía client cần đọc được, nên không dùng prefix
+        options: {
+          ...getBaseOptions(''),
+          httpOnly: false,
+          // Không có maxAge, đây là session cookie
+        },
+      },
+    },
+    // Các giá trị thời gian sống cho logic nghiệp vụ
+    refreshTokenMaxAge: ms(validatedConfig.REFRESH_TOKEN_EXPIRES_IN),
+    rememberMeMaxAge: ms('30d'),
+  }
+})
 
 export const google = registerAs('google', () => ({
   clientId: validatedConfig.GOOGLE_CLIENT_ID,

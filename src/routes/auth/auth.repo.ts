@@ -49,26 +49,50 @@ export class AuthRepository {
 
   async upsertDevice(data: UpsertDeviceData): Promise<DeviceType> {
     const { userId, lastIp, fingerprint, ...deviceInfo } = data
-    const where = fingerprint ? { fingerprint } : { userId, name: deviceInfo.name || 'Unknown' }
 
-    const device = await this.prismaService.device.upsert({
-      where: where as any,
-      create: {
-        userId,
-        lastIp,
-        fingerprint,
-        name: deviceInfo.name || 'Unknown',
-        type: deviceInfo.type || 'Unknown',
-        os: deviceInfo.os || 'Unknown',
-        browser: deviceInfo.browser || 'Unknown',
-      },
-      update: {
-        lastIp,
-        lastActiveAt: new Date(),
-      },
-    })
+    // 1. Cố gắng tìm thiết bị hiện có dựa trên fingerprint (nếu có) hoặc một tổ hợp các đặc điểm khác
+    let existingDevice: DeviceType | null = null
 
-    return device as DeviceType
+    if (fingerprint) {
+      existingDevice = (await this.prismaService.device.findUnique({
+        where: { fingerprint },
+      })) as DeviceType | null
+    }
+
+    if (!existingDevice) {
+      existingDevice = (await this.prismaService.device.findFirst({
+        where: {
+          userId,
+          name: deviceInfo.name || 'Unknown',
+          type: deviceInfo.type || 'Unknown',
+          os: deviceInfo.os || 'Unknown',
+          browser: deviceInfo.browser || 'Unknown',
+        },
+      })) as DeviceType | null
+    }
+
+    // 2. Nếu tìm thấy, cập nhật nó. Nếu không, tạo một cái mới.
+    if (existingDevice) {
+      return (await this.prismaService.device.update({
+        where: { id: existingDevice.id },
+        data: {
+          lastIp,
+          lastActiveAt: new Date(),
+        },
+      })) as DeviceType
+    } else {
+      return (await this.prismaService.device.create({
+        data: {
+          userId,
+          lastIp,
+          fingerprint,
+          name: deviceInfo.name || 'Unknown',
+          type: deviceInfo.type || 'Unknown',
+          os: deviceInfo.os || 'Unknown',
+          browser: deviceInfo.browser || 'Unknown',
+        },
+      })) as DeviceType
+    }
   }
 
   async createSession(data: CreateSessionData): Promise<SessionType> {

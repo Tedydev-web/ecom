@@ -1,28 +1,27 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Ip, Post, Query, Req, Res } from '@nestjs/common'
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query, Res, UseGuards } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { Response, Request } from 'express'
+import { Response } from 'express'
 import { ZodSerializerDto } from 'nestjs-zod'
 import {
   DisableTwoFactorBodyDTO,
   ForgotPasswordBodyDTO,
   GetAuthorizationUrlResDTO,
   LoginBodyDTO,
-  LoginResDTO,
-  RefreshTokenResDTO,
   RegisterBodyDTO,
-  RegisterResDTO,
   SendOTPBodyDTO,
   TwoFactorSetupResDTO,
 } from 'src/routes/auth/auth.dto'
-
 import { AuthService } from 'src/routes/auth/auth.service'
 import { GoogleService } from 'src/routes/auth/google.service'
 import { ActiveUser } from 'src/shared/decorators/active-user.decorator'
 import { IsPublic } from 'src/shared/decorators/auth.decorator'
 import { UserAgent } from 'src/shared/decorators/user-agent.decorator'
-import { EmptyBodyDTO } from 'src/shared/dtos/request.dto'
-import { MessageResDTO } from 'src/shared/dtos/response.dto'
-import { CookieNames } from 'src/shared/constants/cookie.constant'
+import { MessageResDTO, createTypedSuccessResponseDTO } from 'src/shared/dtos/response.dto'
+import { Ip } from 'src/shared/decorators/ip.decorator'
+import { AccessTokenGuard } from 'src/shared/guards/access-token.guard'
+
+// Create typed response DTOs for endpoints that return data
+const TwoFactorSetupResponseDTO = createTypedSuccessResponseDTO(TwoFactorSetupResDTO.schema)
 
 @Controller('auth')
 export class AuthController {
@@ -32,14 +31,21 @@ export class AuthController {
     private readonly configService: ConfigService,
   ) {}
 
+  @IsPublic()
+  @Get('csrf')
+  @HttpCode(HttpStatus.OK)
+  getCsrfToken() {
+    return { message: 'auth.success.CSRF_TOKEN_SUCCESS' }
+  }
+
   @Post('register')
   @IsPublic()
-  @ZodSerializerDto(RegisterResDTO)
+  @ZodSerializerDto(MessageResDTO)
   register(@Body() body: RegisterBodyDTO) {
     return this.authService.register(body)
   }
 
-  @Post('otp')
+  @Post('send-otp')
   @IsPublic()
   @ZodSerializerDto(MessageResDTO)
   sendOTP(@Body() body: SendOTPBodyDTO) {
@@ -48,7 +54,7 @@ export class AuthController {
 
   @Post('login')
   @IsPublic()
-  @ZodSerializerDto(LoginResDTO)
+  @ZodSerializerDto(MessageResDTO)
   login(
     @Body() body: LoginBodyDTO,
     @UserAgent() userAgent: string,
@@ -65,31 +71,32 @@ export class AuthController {
     )
   }
 
-  @Post('refresh-token')
+  @Post('logout')
   @IsPublic()
-  @HttpCode(HttpStatus.OK)
-  @ZodSerializerDto(RefreshTokenResDTO)
-  refreshToken(
-    @Req() req: Request,
-    @UserAgent() userAgent: string,
-    @Ip() ip: string,
+  @ZodSerializerDto(MessageResDTO)
+  logout(
+    @Body() body: any, // RefreshTokenBodyDTO is empty, so we use any
     @Res({ passthrough: true }) res: Response,
   ) {
-    const refreshToken = req.cookies[CookieNames.REFRESH_TOKEN]
+    const refreshToken = res.req.cookies?.refreshToken
+    return this.authService.logout(refreshToken, res)
+  }
+
+  @Post('refresh-token')
+  @IsPublic()
+  @ZodSerializerDto(MessageResDTO)
+  refreshToken(@Res({ passthrough: true }) res: Response) {
+    const request = res.req as any
+    const refreshToken = request.cookies?.refreshToken
+    const userAgent = request.get('User-Agent') || ''
+    const ip = request.ip || ''
+
     return this.authService.refreshToken({
       refreshToken,
       userAgent,
       ip,
       res,
     })
-  }
-
-  @Post('logout')
-  @HttpCode(HttpStatus.OK)
-  @ZodSerializerDto(MessageResDTO)
-  logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const refreshToken = req.cookies[CookieNames.REFRESH_TOKEN]
-    return this.authService.logout(refreshToken, res)
   }
 
   @Get('google-link')
@@ -133,18 +140,17 @@ export class AuthController {
     return this.authService.forgotPassword(body)
   }
 
-  @Post('2fa/setup')
-  @ZodSerializerDto(TwoFactorSetupResDTO)
-  setupTwoFactorAuth(@Body() _: EmptyBodyDTO, @ActiveUser('userId') userId: number) {
+  @Post('setup-2fa')
+  @UseGuards(AccessTokenGuard)
+  @ZodSerializerDto(TwoFactorSetupResponseDTO)
+  setupTwoFactorAuth(@ActiveUser('userId') userId: number) {
     return this.authService.setupTwoFactorAuth(userId)
   }
 
-  @Post('2fa/disable')
+  @Post('disable-2fa')
+  @UseGuards(AccessTokenGuard)
   @ZodSerializerDto(MessageResDTO)
   disableTwoFactorAuth(@Body() body: DisableTwoFactorBodyDTO, @ActiveUser('userId') userId: number) {
-    return this.authService.disableTwoFactorAuth({
-      ...body,
-      userId,
-    })
+    return this.authService.disableTwoFactorAuth({ ...body, userId })
   }
 }

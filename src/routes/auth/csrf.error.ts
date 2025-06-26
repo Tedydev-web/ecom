@@ -1,3 +1,12 @@
-import { GlobalError } from 'src/shared/global.error'
+import { AuthError } from './auth.error'
 
-export const InvalidCsrfTokenException = GlobalError.Forbidden('auth.error.INVALID_CSRF_TOKEN')
+/**
+ * CSRF-specific errors exported from centralized auth errors
+ * This maintains consistency and avoids duplication
+ */
+export const CsrfError = {
+  InvalidToken: AuthError.InvalidCsrfToken,
+  TokenMissing: AuthError.CsrfTokenMissing,
+} as const
+
+export type CsrfErrorKey = keyof typeof CsrfError

@@ -1,106 +1,137 @@
-import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus, Logger, Inject } from '@nestjs/common'
-import { HttpAdapterHost } from '@nestjs/core'
-import { I18nService, I18nContext } from 'nestjs-i18n'
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common'
+import { Request, Response } from 'express'
+import { I18nService } from 'nestjs-i18n'
 import { ApiException } from 'src/shared/exceptions/api.exception'
-import { Response, Request } from 'express'
-import { I18nTranslations } from 'src/generated/i18n.generated'
-import { ZodError } from 'zod'
-import { CookieService } from '../services/cookie.service'
-import * as tokens from 'src/shared/constants/injection.tokens'
 
-interface IErrorResponse {
+export interface StandardErrorResponse {
   success: false
   statusCode: number
-  code: string
-  message: string
-  details?: any
+  error: {
+    code: string
+    message: string
+    details?: any
+  }
+  timestamp: string
+  path: string
+  requestId?: string
 }
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name)
 
-  constructor(
-    private readonly httpAdapterHost: HttpAdapterHost,
-    private readonly i18n: I18nService<I18nTranslations>,
-    @Inject(tokens.COOKIE_SERVICE) private readonly cookieService: CookieService,
-  ) {}
+  constructor(private readonly i18n: I18nService) {}
 
-  catch(exception: unknown, host: ArgumentsHost): void {
-    const { httpAdapter } = this.httpAdapterHost
+  async catch(exception: unknown, host: ArgumentsHost): Promise<void> {
     const ctx = host.switchToHttp()
-    const response = ctx.getResponse<Response>()
     const request = ctx.getRequest<Request>()
-    const lang = I18nContext.current()?.lang
+    const response = ctx.getResponse<Response>()
 
-    let statusCode: HttpStatus
-    let code: string
+    let statusCode: number
+    let errorCode: string
     let message: string
-    let details: any
+    let details: any = null
 
-    if (exception && (exception as any).code === 'EBADCSRFTOKEN') {
-      statusCode = HttpStatus.FORBIDDEN
-      code = 'INVALID_CSRF_TOKEN'
-      message = this.i18n.t('global.error.INVALID_CSRF_TOKEN' as any, { lang })
-      details = 'CSRF token is invalid or missing.'
-    } else if (exception instanceof ApiException) {
+    // Handle different types of exceptions
+    if (exception instanceof ApiException) {
+      // Custom ApiException (our primary exception type)
       statusCode = exception.getStatus()
-      code = exception.code
-      message = this.i18n.t(exception.message as any, {
-        lang,
-        args: exception.details,
-      })
+      errorCode = exception.code
+      message = await this.translateMessage(exception.message, request)
       details = exception.details
-    } else if (exception instanceof ZodError) {
-      statusCode = HttpStatus.UNPROCESSABLE_ENTITY
-      code = 'VALIDATION_FAILED'
-      message = this.i18n.t('global.error.VALIDATION_FAILED' as any, { lang })
-      details = exception.flatten()
     } else if (exception instanceof HttpException) {
+      // Built-in NestJS HttpException
       statusCode = exception.getStatus()
+      errorCode = this.getErrorCodeFromStatus(statusCode)
       const exceptionResponse = exception.getResponse()
-      code = `HTTP_${statusCode}`
-      if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
-        message = (exceptionResponse as any).message || exception.message
-        details = exceptionResponse
+
+      if (typeof exceptionResponse === 'string') {
+        message = await this.translateMessage(exceptionResponse, request)
+      } else if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
+        const errorObj = exceptionResponse as any
+        message = await this.translateMessage(errorObj.message || errorObj.error || 'global.error.BAD_REQUEST', request)
+        details = errorObj.details || null
       } else {
-        message = exceptionResponse || exception.message
+        message = await this.translateMessage('global.error.BAD_REQUEST', request)
       }
     } else {
+      // Unknown exceptions (fallback)
       statusCode = HttpStatus.INTERNAL_SERVER_ERROR
-      code = 'INTERNAL_SERVER_ERROR'
-      message = this.i18n.t('global.error.INTERNAL_SERVER_ERROR', { lang })
-      details = process.env.NODE_ENV !== 'production' ? (exception as Error).stack : undefined
+      errorCode = 'E0001'
+      message = await this.translateMessage('global.error.INTERNAL_SERVER_ERROR', request)
+
+      // Log unknown exceptions for debugging
+      this.logger.error('Unknown exception occurred:', exception)
     }
 
-    const responseBody: IErrorResponse = {
+    // Create standardized error response
+    const errorResponse: StandardErrorResponse = {
       success: false,
       statusCode,
-      code,
-      message,
-      details,
+      error: {
+        code: errorCode,
+        message,
+        ...(details && { details }),
+      },
+      timestamp: new Date().toISOString(),
+      path: request.url,
+      requestId: request.headers['x-request-id'] as string,
     }
 
-    this.logError(request, responseBody, exception)
-    this.handleAuthCookies(statusCode, response)
-
-    httpAdapter.reply(response, responseBody, statusCode)
-  }
-
-  private logError(request: Request, errorResponse: IErrorResponse, exception: unknown) {
-    const { method, url } = request
-    const { statusCode, code, details } = errorResponse
-    const errorDetails = JSON.stringify(details)
-    const stack = (exception as Error).stack
-
-    this.logger.error(`[${method} ${url}] - Status: ${statusCode} - Code: ${code} - Details: ${errorDetails}`, stack)
-  }
-
-  private handleAuthCookies(statusCode: number, response: Response) {
-    // Nếu lỗi là do không được phép (Unauthorized), xóa cookie để buộc người dùng đăng nhập lại.
-    // Điều này tăng cường bảo mật, tránh trường hợp cookie cũ vẫn được lưu trên trình duyệt.
-    if (statusCode === 401) {
-      this.cookieService.clearTokenCookies(response)
+    // Log error for monitoring (exclude 4xx client errors from error logs)
+    if (statusCode >= 500) {
+      this.logger.error(`HTTP ${statusCode} Error - ${errorCode}: ${message}`, {
+        path: request.url,
+        method: request.method,
+        statusCode,
+        errorCode,
+        userAgent: request.get('User-Agent'),
+        ip: request.ip,
+        details,
+        stack: exception instanceof Error ? exception.stack : undefined,
+      })
+    } else {
+      this.logger.warn(`HTTP ${statusCode} Client Error - ${errorCode}: ${message}`, {
+        path: request.url,
+        method: request.method,
+        statusCode,
+        errorCode,
+      })
     }
+
+    response.status(statusCode).json(errorResponse)
+  }
+
+  private async translateMessage(messageKey: string, request: Request): Promise<string> {
+    try {
+      // Check if it's a translation key (contains dots)
+      if (messageKey.includes('.')) {
+        const lang = request.acceptsLanguages(['vi', 'en']) || 'vi'
+        return await this.i18n.translate(messageKey, { lang })
+      }
+      // Return as-is if it's not a translation key
+      return messageKey
+    } catch (error) {
+      this.logger.warn(`Failed to translate message: ${messageKey}`, error)
+      return messageKey
+    }
+  }
+
+  private getErrorCodeFromStatus(statusCode: number): string {
+    const errorCodeMap: Record<number, string> = {
+      400: 'E0002', // Bad Request
+      401: 'E0003', // Unauthorized
+      403: 'E0004', // Forbidden
+      404: 'E0005', // Not Found
+      409: 'E0007', // Conflict
+      422: 'E0006', // Unprocessable Entity
+      429: 'E0008', // Too Many Requests
+      500: 'E0001', // Internal Server Error
+      502: 'E0015', // Bad Gateway
+      503: 'E0009', // Service Unavailable
+      504: 'E0016', // Gateway Timeout
+    }
+
+    return errorCodeMap[statusCode] || 'E0001'
   }
 }

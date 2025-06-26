@@ -105,9 +105,7 @@ export class AuthService {
         type: TypeOfVerificationCode.REGISTER,
       })
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { password, totpSecret, ...userWithoutSensitiveData } = user
-      return userWithoutSensitiveData
+      return { message: 'auth.success.REGISTER_SUCCESS' }
     } catch (error) {
       if (isUniqueConstraintPrismaError(error)) {
         throw AuthError.EmailAlreadyExists
@@ -136,9 +134,9 @@ export class AuthService {
       code,
     })
     if (error) {
-      throw AuthError.FailedToSendOTP
+      throw AuthError.OTPSendingFailed
     }
-    return { message: 'auth.success.OTP_SENT' }
+    return { message: 'auth.success.SEND_OTP_SUCCESS' }
   }
 
   async login(body: LoginBodyType & { userAgent: string; ip: string }, res: Response) {
@@ -219,10 +217,8 @@ export class AuthService {
     // 8. Set tokens vào cookie, có kiểm tra "rememberMe"
     this.cookieService.setTokenCookies(res, accessToken, refreshToken, body.rememberMe)
 
-    // 9. Bỏ các trường nhạy cảm khỏi object user trả về
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, totpSecret, ...userWithoutSensitiveData } = user
-    return userWithoutSensitiveData
+    // 9. Trả về message thay vì user data
+    return { message: 'auth.success.LOGIN_SUCCESS' }
   }
 
   async generateTokens({ userId, sessionId, roleId, roleName }: AccessTokenPayloadCreate) {
@@ -294,7 +290,7 @@ export class AuthService {
     // 6. Set cookie mới
     this.cookieService.setTokenCookies(res, tokens.accessToken, tokens.refreshToken, true)
 
-    res.status(200).send({ message: 'auth.success.REFRESH_TOKEN_SUCCESS' })
+    return { message: 'auth.success.REFRESH_TOKEN_SUCCESS' }
   }
 
   async logout(refreshToken: string | undefined, res: Response) {
@@ -321,7 +317,7 @@ export class AuthService {
     const { email } = body
     const user = await this.sharedUserRepository.findByEmail(email)
     if (!user) {
-      return { message: 'auth.success.FORGOT_PASSWORD_SENT' }
+      return { message: 'auth.success.FORGOT_PASSWORD_SUCCESS' }
     }
     const code = generateOTP()
     await this.emailService.sendOTP({
@@ -334,7 +330,7 @@ export class AuthService {
       type: TypeOfVerificationCode.FORGOT_PASSWORD,
       expiresAt: addMilliseconds(new Date(), this.configService.get<number>('otp.expiresInMs')!),
     })
-    return { message: 'auth.success.FORGOT_PASSWORD_SENT' }
+    return { message: 'auth.success.FORGOT_PASSWORD_SUCCESS' }
   }
 
   async setupTwoFactorAuth(userId: number) {
@@ -348,8 +344,11 @@ export class AuthService {
     const { secret, uri } = this.twoFactorService.generateTOTPSecret(user.email)
     await this.sharedUserRepository.update(userId, { totpSecret: secret })
     return {
-      secret,
-      uri,
+      message: 'auth.success.SETUP_2FA_SUCCESS',
+      data: {
+        secret,
+        uri,
+      },
     }
   }
 

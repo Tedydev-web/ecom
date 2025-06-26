@@ -1,6 +1,7 @@
 import { TypeOfVerificationCode } from 'src/shared/constants/auth.constant'
 import { UserSchema } from 'src/shared/models/shared-user.model'
 import { z } from 'zod'
+import { UserStatus } from 'src/shared/constants/auth.constant'
 
 export const RegisterBodySchema = UserSchema.pick({
   email: true,
@@ -22,11 +23,6 @@ export const RegisterBodySchema = UserSchema.pick({
       })
     }
   })
-
-export const RegisterResSchema = UserSchema.omit({
-  password: true,
-  totpSecret: true,
-})
 
 export const VerificationCodeSchema = z.object({
   id: z.number(),
@@ -74,18 +70,11 @@ export const LoginBodySchema = UserSchema.pick({
     }
   })
 
-export const LoginResSchema = UserSchema.omit({
-  password: true,
-  totpSecret: true,
-})
-
 export const RefreshTokenBodySchema = z
   .object({
     // refreshToken sẽ được đọc từ cookie, body này sẽ trống
   })
   .strict()
-
-export const RefreshTokenResSchema = LoginResSchema
 
 export const DeviceSchema = z.object({
   id: z.number(),
@@ -196,14 +185,11 @@ export const SessionSchema = z.object({
 })
 
 export type RegisterBodyType = z.infer<typeof RegisterBodySchema>
-export type RegisterResType = z.infer<typeof RegisterResSchema>
 export type VerificationCodeType = z.infer<typeof VerificationCodeSchema>
 export type SendOTPBodyType = z.infer<typeof SendOTPBodySchema>
 export type LoginBodyType = z.infer<typeof LoginBodySchema>
-export type LoginResType = z.infer<typeof LoginResSchema>
 export type RefreshTokenType = z.infer<typeof RefreshTokenSchema>
 export type RefreshTokenBodyType = z.infer<typeof RefreshTokenBodySchema>
-export type RefreshTokenResType = z.infer<typeof RefreshTokenResSchema>
 export type DeviceType = z.infer<typeof DeviceSchema>
 export type RoleType = z.infer<typeof RoleSchema>
 export type LogoutBodyType = z.infer<typeof LogoutBodySchema>

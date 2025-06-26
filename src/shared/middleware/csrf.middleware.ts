@@ -1,21 +1,28 @@
-import { Injectable, NestMiddleware, Logger } from '@nestjs/common'
+import { Injectable, NestMiddleware, Logger, Inject } from '@nestjs/common'
 import { Request, Response, NextFunction } from 'express'
 import csurf from 'csurf'
 import { ConfigService } from '@nestjs/config'
+import * as tokens from 'src/shared/constants/injection.tokens'
+import { CookieService } from '../services/cookie.service'
 
 @Injectable()
 export class CsrfProtectionMiddleware implements NestMiddleware {
   private readonly logger = new Logger(CsrfProtectionMiddleware.name)
   private readonly csurfProtection: (req: Request, res: Response, next: NextFunction) => void
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Inject(tokens.COOKIE_SERVICE) private readonly cookieService: CookieService,
+  ) {
+    // Lấy cấu hình chi tiết cho cookie bí mật (_csrf) từ config trung tâm
+    const csrfSecretConfig = this.configService.get('cookie.definitions.csrfSecret')
+
     this.csurfProtection = csurf({
       cookie: {
-        httpOnly: true,
-        secure: this.configService.get<boolean>('cookie.secure'),
-        sameSite: this.configService.get('cookie.sameSite'),
-        path: this.configService.get<string>('cookie.path'),
-        domain: this.configService.get<string>('cookie.domain'),
+        ...csrfSecretConfig.options,
+        // Cấu hình của csurf yêu cầu `signed` và `key` phải được đặt ở đây
+        signed: true,
+        key: csrfSecretConfig.name,
       },
       value: (req: Request) => {
         // Hỗ trợ cả hai header phổ biến mà các framework frontend hay dùng
@@ -28,18 +35,13 @@ export class CsrfProtectionMiddleware implements NestMiddleware {
     this.csurfProtection(req, res, (err: any) => {
       if (err) {
         this.logger.warn(`Invalid CSRF token: ${err.code}`, { url: req.originalUrl })
-        // Thay vì throw ForbiddenException, chúng ta sẽ để cho AllExceptionsFilter xử lý
+        // Để cho AllExceptionsFilter xử lý lỗi một cách nhất quán
         return next(err)
       }
       const token = req.csrfToken()
-      // Set cookie XSRF-TOKEN mà client có thể đọc được để gửi lại trong header
-      res.cookie('XSRF-TOKEN', token, {
-        secure: this.configService.get<boolean>('cookie.secure'),
-        sameSite: this.configService.get('cookie.sameSite'),
-        path: this.configService.get<string>('cookie.path'),
-        domain: this.configService.get<string>('cookie.domain'),
-        httpOnly: false, // Quan trọng: Phải là false để JS ở client đọc được
-      })
+      // Sử dụng CookieService để set cookie XSRF-TOKEN cho client
+      this.cookieService.set(res, 'csrfToken', token)
+
       next()
     })
   }

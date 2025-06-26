@@ -1,36 +1,86 @@
 import { GlobalError } from 'src/shared/global.error'
 
+/**
+ * Centralized Auth Error Definitions
+ * Organized by functional groups for better maintainability
+ */
 export const AuthError = {
-  EmailAlreadyExists: GlobalError.BadRequest('auth.error.EMAIL_ALREADY_EXISTS'),
-  EmailNotFound: GlobalError.NotFound('user', { message: 'auth.error.EMAIL_NOT_FOUND' }),
-  InvalidPassword: GlobalError.Unauthorized('auth.error.INVALID_PASSWORD'),
+  // === User & Account Errors ===
+  EmailAlreadyExists: GlobalError.Conflict('auth.error.EMAIL_ALREADY_EXISTS'),
+  EmailNotFound: GlobalError.NotFound('auth.error.EMAIL_NOT_FOUND'),
+  UserNotFound: GlobalError.NotFound('auth.error.USER_NOT_FOUND'),
+  UserNotActive: GlobalError.Forbidden('auth.error.USER_NOT_ACTIVE'),
+  UserBlocked: GlobalError.Forbidden('auth.error.USER_BLOCKED'),
+  AccountLocked: GlobalError.Forbidden('auth.error.ACCOUNT_LOCKED'),
 
-  // OTP Errors
+  // === Password & Credentials Errors ===
+  InvalidPassword: GlobalError.Unauthorized('auth.error.INVALID_PASSWORD'),
+  InvalidCredentials: GlobalError.Unauthorized('auth.error.INVALID_CREDENTIALS'),
+  PasswordsNotMatch: GlobalError.BadRequest('auth.error.PASSWORDS_NOT_MATCH'),
+  SamePassword: GlobalError.BadRequest('auth.error.SAME_PASSWORD'),
+  WeakPassword: GlobalError.BadRequest('auth.error.WEAK_PASSWORD'),
+
+  // === OTP Errors ===
   InvalidOTP: GlobalError.BadRequest('auth.error.INVALID_OTP'),
   OTPExpired: GlobalError.BadRequest('auth.error.OTP_EXPIRED'),
-  FailedToSendOTP: GlobalError.InternalServerError('auth.error.FAILED_TO_SEND_OTP'),
+  OTPSendingFailed: GlobalError.InternalServerError('auth.error.OTP_SENDING_FAILED'),
+  OTPMaxAttempts: GlobalError.BadRequest('auth.error.OTP_MAX_ATTEMPTS'),
+  OTPRequired: GlobalError.BadRequest('auth.error.OTP_REQUIRED'),
 
-  // 2FA/TOTP Errors
+  // === 2FA/TOTP Errors ===
   InvalidTOTP: GlobalError.BadRequest('auth.error.INVALID_TOTP'),
-  InvalidTOTPAndCode: GlobalError.BadRequest('auth.error.INVALID_TOTP_AND_CODE'),
-  TOTPAlreadyEnabled: GlobalError.BadRequest('auth.error.TOTP_ALREADY_ENABLED'),
+  TOTPRequired: GlobalError.BadRequest('auth.error.TOTP_REQUIRED'),
+  TOTPAlreadyEnabled: GlobalError.Conflict('auth.error.TOTP_ALREADY_ENABLED'),
   TOTPNotEnabled: GlobalError.BadRequest('auth.error.TOTP_NOT_ENABLED'),
+  InvalidTOTPAndCode: GlobalError.BadRequest('auth.error.INVALID_TOTP_AND_CODE'),
   Disable2FARequiresCode: GlobalError.BadRequest('auth.error.DISABLE_2FA_REQUIRES_CODE'),
+  InvalidRecoveryCode: GlobalError.BadRequest('auth.error.INVALID_RECOVERY_CODE'),
 
-  // Token Errors
+  // === Token & Session Errors ===
   RefreshTokenRequired: GlobalError.Unauthorized('auth.error.REFRESH_TOKEN_REQUIRED'),
   InvalidRefreshToken: GlobalError.Unauthorized('auth.error.INVALID_REFRESH_TOKEN'),
   RefreshTokenReused: GlobalError.Forbidden('auth.error.REFRESH_TOKEN_REUSED'),
+  AccessTokenExpired: GlobalError.Unauthorized('auth.error.ACCESS_TOKEN_EXPIRED'),
+  InvalidAccessToken: GlobalError.Unauthorized('auth.error.INVALID_ACCESS_TOKEN'),
+  TokenBlacklisted: GlobalError.Unauthorized('auth.error.TOKEN_BLACKLISTED'),
 
-  // General Auth Errors
-  UserNotFound: GlobalError.NotFound('user', { message: 'auth.error.USER_NOT_FOUND' }),
-  UserNotActive: GlobalError.Forbidden('auth.error.USER_NOT_ACTIVE'),
-
-  // Google OAuth Errors
-  GoogleUserInfoError: GlobalError.InternalServerError('auth.error.GOOGLE_USER_INFO_ERROR'),
-  InvalidCsrfToken: GlobalError.Forbidden('auth.error.INVALID_CSRF_TOKEN'),
-
-  // New errors
-  SessionRevoked: GlobalError.Unauthorized('auth.error.SESSION_REVOKED'),
+  SessionNotFound: GlobalError.NotFound('auth.error.SESSION_NOT_FOUND'),
   SessionExpired: GlobalError.Unauthorized('auth.error.SESSION_EXPIRED'),
-}
+  SessionRevoked: GlobalError.Unauthorized('auth.error.SESSION_REVOKED'),
+  SessionUserMismatch: GlobalError.Unauthorized('auth.error.SESSION_USER_MISMATCH'),
+  InvalidSession: GlobalError.Unauthorized('auth.error.INVALID_SESSION'),
+
+  // === Device Errors ===
+  DeviceNotFound: GlobalError.NotFound('auth.error.DEVICE_NOT_FOUND'),
+  DeviceNotTrusted: GlobalError.Forbidden('auth.error.DEVICE_NOT_TRUSTED'),
+  SuspiciousDevice: GlobalError.Forbidden('auth.error.SUSPICIOUS_DEVICE'),
+
+  // === OAuth & Social Auth Errors ===
+  GoogleAuthError: GlobalError.InternalServerError('auth.error.GOOGLE_AUTH_ERROR'),
+  GoogleUserInfoError: GlobalError.InternalServerError('auth.error.GOOGLE_USER_INFO_ERROR'),
+  GoogleCallbackError: GlobalError.BadRequest('auth.error.GOOGLE_CALLBACK_ERROR'),
+  GoogleAccountLinked: GlobalError.Conflict('auth.error.GOOGLE_ACCOUNT_LINKED'),
+  GoogleNotLinked: GlobalError.BadRequest('auth.error.GOOGLE_NOT_LINKED'),
+  InvalidOAuthState: GlobalError.BadRequest('auth.error.INVALID_OAUTH_STATE'),
+  OAuthCancelled: GlobalError.BadRequest('auth.error.OAUTH_CANCELLED'),
+
+  // === CSRF & Security Errors ===
+  InvalidCsrfToken: GlobalError.Forbidden('auth.error.INVALID_CSRF_TOKEN'),
+  CsrfTokenMissing: GlobalError.BadRequest('auth.error.CSRF_TOKEN_MISSING'),
+
+  // === Verification Errors ===
+  VerificationCodeInvalid: GlobalError.BadRequest('auth.error.VERIFICATION_CODE_INVALID'),
+  VerificationCodeNotFound: GlobalError.NotFound('auth.error.VERIFICATION_CODE_NOT_FOUND'),
+  VerificationRequired: GlobalError.BadRequest('auth.error.VERIFICATION_REQUIRED'),
+  EmailNotVerified: GlobalError.BadRequest('auth.error.EMAIL_NOT_VERIFIED'),
+
+  // === System & General Errors ===
+  RoleNotFound: GlobalError.InternalServerError('auth.error.ROLE_NOT_FOUND'),
+  InsufficientPermissions: GlobalError.Forbidden('auth.error.INSUFFICIENT_PERMISSIONS'),
+  RateLimitExceeded: GlobalError.BadRequest('auth.error.RATE_LIMIT_EXCEEDED'),
+  ServiceUnavailable: GlobalError.InternalServerError('auth.error.SERVICE_UNAVAILABLE'),
+  MaintenanceMode: GlobalError.InternalServerError('auth.error.MAINTENANCE_MODE'),
+} as const
+
+// Type for auth error keys for better type safety
+export type AuthErrorKey = keyof typeof AuthError
