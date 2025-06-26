@@ -11,6 +11,8 @@ import { RolesService } from 'src/routes/auth/roles.service'
 import { CookieService } from 'src/shared/services/cookie.service'
 import { HashingService } from 'src/shared/services/hashing.service'
 import { v4 as uuidv4 } from 'uuid'
+import { addMilliseconds } from 'date-fns'
+import { UserAgentService } from 'src/shared/services/user-agent.service'
 
 @Injectable()
 export class GoogleService {
@@ -25,6 +27,7 @@ export class GoogleService {
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
     private readonly cookieService: CookieService,
+    private readonly userAgentService: UserAgentService,
   ) {
     this.oauth2Client = new google.auth.OAuth2(
       this.configService.get<string>('google.clientId'),
@@ -73,50 +76,86 @@ export class GoogleService {
         auth: this.oauth2Client,
         version: 'v2',
       })
-      const { data } = await oauth2.userinfo.get()
-      if (!data.email) {
+      const { data: googleUser } = await oauth2.userinfo.get()
+      if (!googleUser.email) {
         throw AuthError.GoogleUserInfoError
       }
 
+      // 4. Tìm hoặc tạo user
       let user = await this.authRepository.findUniqueUserIncludeRole({
-        email: data.email,
+        email: googleUser.email,
       })
-      // Nếu không có user tức là người mới, vậy nên sẽ tiến hành đăng ký
+
       if (!user) {
         const clientRoleId = await this.rolesService.getClientRoleId()
         const randomPassword = uuidv4()
         const hashedPassword = await this.hashingService.hash(randomPassword)
-        user = await this.authRepository.createUserInclueRole({
-          email: data.email,
-          name: data.name ?? '',
+        const createdUser = await this.authRepository.createUserInclueRole({
+          email: googleUser.email,
+          name: googleUser.name ?? '',
           password: hashedPassword,
           roleId: clientRoleId,
           phoneNumber: '',
-          avatar: data.picture ?? null,
+          avatar: googleUser.picture ?? null,
         })
+        // Manually add _count to satisfy the type checker, as createUserInclueRole does not return it.
+        user = {
+          ...createdUser,
+          _count: {
+            sessions: 0,
+            devices: 0,
+          },
+        }
       }
-      const device = await this.authRepository.createDevice({
+
+      if (!user) {
+        // This check is for type safety, though logic above ensures user is defined.
+        throw AuthError.UserNotFound
+      }
+
+      // 5. Phân tích user agent để lấy thông tin thiết bị
+      const parsedUserAgent = this.userAgentService.parse(userAgent)
+
+      // 6. Upsert (tạo hoặc cập nhật) thiết bị
+      const device = await this.authRepository.upsertDevice({
         userId: user.id,
-        userAgent,
-        ip,
+        lastIp: ip,
+        browser: parsedUserAgent.browser,
+        os: parsedUserAgent.os,
+        type: parsedUserAgent.deviceType,
       })
-      const { accessToken, refreshToken } = await this.authService.generateTokens({
+
+      // 7. Tính toán thời gian hết hạn cho Refresh Token
+      const refreshTokenExpiresInMs = this.configService.get<number>('jwt.refreshToken.expiresInMs')!
+      const refreshTokenExpiresAt = addMilliseconds(new Date(), refreshTokenExpiresInMs)
+
+      // 8. Tạo một phiên đăng nhập (session) mới
+      const session = await this.authRepository.createSession({
         userId: user.id,
         deviceId: device.id,
+        ipAddress: ip,
+        userAgent: userAgent,
+        expiresAt: refreshTokenExpiresAt,
+      })
+
+      // 9. Tạo mới accessToken và refreshToken với sessionId
+      const { accessToken, refreshToken } = await this.authService.generateTokens({
+        userId: user.id,
+        sessionId: session.id,
         roleId: user.roleId,
         roleName: user.role.name,
       })
-      this.cookieService.setTokenCookies(res, accessToken, refreshToken)
+
+      // 10. Set cookies. Google login is like "remember me" by default.
+      this.cookieService.setTokenCookies(res, accessToken, refreshToken, true)
 
       res.redirect(this.clientUrl)
     } catch (error) {
       this.logger.error('Error in googleCallback', error)
-      if (error instanceof Error && 'code' in error && error.code === 'E400') {
-        // Handle specific Google API errors if needed
-        throw AuthError.GoogleUserInfoError
-      }
-      // Re-throw our standardized error for consistent client response
-      throw AuthError.GoogleUserInfoError
+      // Redirect to a failure page on the client for better UX
+      const failureRedirectUrl = new URL('/auth/login-failure', this.clientUrl)
+      failureRedirectUrl.searchParams.set('error', 'google_oauth_failed')
+      res.redirect(failureRedirectUrl.toString())
     }
   }
 }

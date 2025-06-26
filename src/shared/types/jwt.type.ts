@@ -1,6 +1,6 @@
 export interface AccessTokenPayloadCreate {
   userId: number
-  deviceId: number
+  sessionId: string
   roleId: number
   roleName: string
 }
@@ -13,7 +13,7 @@ export interface AccessTokenPayload extends AccessTokenPayloadCreate {
 
 export interface RefreshTokenPayloadCreate {
   userId: number
-  deviceId: number
+  sessionId: string
 }
 
 export interface RefreshTokenPayload extends RefreshTokenPayloadCreate {

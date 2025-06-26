@@ -1,8 +1,14 @@
 import { Injectable } from '@nestjs/common'
+import { Device, Session } from '@prisma/client'
 import { DeviceType, RegisterBodyType, RoleType, VerificationCodeType } from 'src/routes/auth/auth.model'
 import { TypeOfVerificationCodeType } from 'src/shared/constants/auth.constant'
 import { UserType } from 'src/shared/models/shared-user.model'
 import { PrismaService } from 'src/shared/services/prisma.service'
+
+export type UpsertDeviceData = Pick<Device, 'userId' | 'lastIp'> &
+  Partial<Pick<Device, 'fingerprint' | 'name' | 'type' | 'os' | 'browser'>>
+
+export type CreateSessionData = Pick<Session, 'userId' | 'deviceId' | 'ipAddress' | 'userAgent' | 'expiresAt'>
 
 @Injectable()
 export class AuthRepository {
@@ -66,35 +72,82 @@ export class AuthRepository {
     })
   }
 
-  createDevice(
-    data: Pick<DeviceType, 'userId' | 'userAgent' | 'ip'> & Partial<Pick<DeviceType, 'lastActive' | 'isActive'>>,
-  ) {
-    return this.prismaService.device.create({
-      data,
+  async upsertDevice(data: UpsertDeviceData): Promise<Device> {
+    const now = new Date()
+    const deviceData = {
+      userId: data.userId,
+      fingerprint: data.fingerprint,
+      name: data.name,
+      type: data.type,
+      os: data.os,
+      browser: data.browser,
+      lastIp: data.lastIp,
+      lastActiveAt: now,
+    }
+
+    if (data.fingerprint) {
+      return this.prismaService.device.upsert({
+        where: { fingerprint: data.fingerprint },
+        create: deviceData,
+        update: {
+          lastIp: data.lastIp,
+          lastActiveAt: now,
+        },
+      })
+    }
+
+    return this.prismaService.device.create({ data: deviceData })
+  }
+
+  async createSession(data: CreateSessionData): Promise<Session> {
+    return this.prismaService.session.create({ data })
+  }
+
+  async findValidSessionById(id: string): Promise<(Session & { user: UserType & { role: RoleType } }) | null> {
+    return this.prismaService.session.findFirst({
+      where: {
+        id,
+        revokedAt: null,
+        expiresAt: {
+          gt: new Date(),
+        },
+      },
+      include: {
+        user: {
+          include: {
+            role: true,
+          },
+        },
+      },
     })
   }
 
-  async findUniqueUserIncludeRole(
-    uniqueObject: { email: string } | { id: number },
-  ): Promise<(UserType & { role: RoleType }) | null> {
+  async updateSessionLastActive(id: string): Promise<Session> {
+    return this.prismaService.session.update({
+      where: { id },
+      data: { lastActiveAt: new Date() },
+    })
+  }
+
+  async revokeSession(id: string): Promise<Session> {
+    return this.prismaService.session.update({
+      where: { id },
+      data: { revokedAt: new Date() },
+    })
+  }
+
+  async findUniqueUserIncludeRole(uniqueObject: { email: string } | { id: number }) {
     return this.prismaService.user.findUnique({
       where: uniqueObject,
       include: {
         role: true,
+        _count: {
+          select: {
+            sessions: { where: { revokedAt: null, expiresAt: { gte: new Date() } } },
+            devices: true,
+          },
+        },
       },
-    })
-  }
-
-  async findUniqueDevice(where: { id: number }): Promise<DeviceType | null> {
-    return this.prismaService.device.findUnique({ where })
-  }
-
-  updateDevice(deviceId: number, data: Partial<DeviceType>): Promise<DeviceType> {
-    return this.prismaService.device.update({
-      where: {
-        id: deviceId,
-      },
-      data,
     })
   }
 

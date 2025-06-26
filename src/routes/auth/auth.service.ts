@@ -27,6 +27,7 @@ import { Response } from 'express'
 import { UserType } from 'src/shared/models/shared-user.model'
 import { GlobalError } from 'src/shared/global.error'
 import { SessionService } from 'src/shared/services/session.service'
+import { UserAgentService } from 'src/shared/services/user-agent.service'
 
 interface RefreshTokenInput {
   refreshToken: string | undefined
@@ -48,6 +49,7 @@ export class AuthService {
     private readonly cookieService: CookieService,
     private readonly configService: ConfigService,
     private readonly sessionService: SessionService,
+    private readonly userAgentService: UserAgentService,
   ) {}
 
   async validateVerificationCode({
@@ -138,20 +140,20 @@ export class AuthService {
 
   async login(body: LoginBodyType & { userAgent: string; ip: string }, res: Response) {
     // 1. Lấy thông tin user, kiểm tra user có tồn tại hay không, mật khẩu có đúng không
-    const user = await this.authRepository.findUniqueUserIncludeRole({
+    const userWithCount = await this.authRepository.findUniqueUserIncludeRole({
       email: body.email,
     })
 
-    if (!user) {
+    if (!userWithCount) {
       throw AuthError.EmailNotFound
     }
 
-    const isPasswordMatch = await this.hashingService.compare(body.password, user.password)
+    const isPasswordMatch = await this.hashingService.compare(body.password, userWithCount.password)
     if (!isPasswordMatch) {
       throw AuthError.InvalidPassword
     }
     // 2. Nếu user đã bật mã 2FA thì kiểm tra mã 2FA TOTP Code hoặc OTP Code (email)
-    if (user.totpSecret) {
+    if (userWithCount.totpSecret) {
       // Nếu không có mã TOTP Code và Code thì thông báo cho client biết
       if (!body.totpCode && !body.code) {
         throw AuthError.InvalidTOTPAndCode
@@ -160,7 +162,7 @@ export class AuthService {
       // Kiểm tra TOTP Code có hợp lệ hay không
       if (body.totpCode) {
         const isValid = this.twoFactorService.verifyTOTP({
-          secret: user.totpSecret,
+          secret: userWithCount.totpSecret,
           token: body.totpCode,
         })
         if (!isValid) {
@@ -169,47 +171,66 @@ export class AuthService {
       } else if (body.code) {
         // Kiểm tra mã OTP có hợp lệ không
         await this.validateVerificationCode({
-          email: user.email,
+          email: userWithCount.email,
           code: body.code,
           type: TypeOfVerificationCode.LOGIN,
         })
       }
     }
 
-    // 3. Tạo mới device
-    const device = await this.authRepository.createDevice({
-      userId: user.id,
-      userAgent: body.userAgent,
-      ip: body.ip,
+    // 3. Phân tích user agent để lấy thông tin thiết bị
+    const parsedUserAgent = this.userAgentService.parse(body.userAgent)
+
+    // 4. Upsert (tạo hoặc cập nhật) thiết bị
+    const device = await this.authRepository.upsertDevice({
+      userId: userWithCount.id,
+      lastIp: body.ip,
+      browser: parsedUserAgent.browser,
+      os: parsedUserAgent.os,
+      type: parsedUserAgent.deviceType,
+      // fingerprint sẽ được triển khai ở giai đoạn sau để tăng độ chính xác
     })
 
-    // 4. Tạo mới accessToken và refreshToken
-    const { accessToken, refreshToken } = await this.generateTokens({
-      userId: user.id,
+    // 5. Tính toán thời gian hết hạn cho Refresh Token
+    const refreshTokenExpiresInMs = this.configService.get<number>('jwt.refreshToken.expiresInMs')!
+    const refreshTokenExpiresAt = addMilliseconds(new Date(), refreshTokenExpiresInMs)
+
+    // 6. Tạo một phiên đăng nhập (session) mới
+    const session = await this.authRepository.createSession({
+      userId: userWithCount.id,
       deviceId: device.id,
-      roleId: user.roleId,
-      roleName: user.role.name,
+      ipAddress: body.ip,
+      userAgent: body.userAgent,
+      expiresAt: refreshTokenExpiresAt,
     })
 
-    // 5. Set tokens vào cookie
-    this.cookieService.setTokenCookies(res, accessToken, refreshToken)
+    // 7. Tạo mới accessToken và refreshToken với sessionId
+    const { accessToken, refreshToken } = await this.generateTokens({
+      userId: userWithCount.id,
+      sessionId: session.id,
+      roleId: userWithCount.roleId,
+      roleName: userWithCount.role.name,
+    })
 
-    // 6. Bỏ password và totpSecret khỏi object user trả về
-    const { password, totpSecret, ...userWithoutSensitiveData } = user
+    // 8. Set tokens vào cookie, có kiểm tra "rememberMe"
+    this.cookieService.setTokenCookies(res, accessToken, refreshToken, body.rememberMe)
+
+    // 9. Bỏ các trường nhạy cảm khỏi object user trả về
+    const { password, totpSecret, _count, ...userWithoutSensitiveData } = userWithCount
     return userWithoutSensitiveData
   }
 
-  async generateTokens({ userId, deviceId, roleId, roleName }: AccessTokenPayloadCreate) {
+  async generateTokens({ userId, sessionId, roleId, roleName }: AccessTokenPayloadCreate) {
     const [accessToken, refreshToken] = await Promise.all([
       this.tokenService.signAccessToken({
         userId,
-        deviceId,
+        sessionId,
         roleId,
         roleName,
       }),
       this.tokenService.signRefreshToken({
         userId,
-        deviceId,
+        sessionId,
       }),
     ])
     return { accessToken, refreshToken }
@@ -217,61 +238,57 @@ export class AuthService {
 
   async refreshToken({ refreshToken, userAgent, ip, res }: RefreshTokenInput) {
     if (!refreshToken) {
+      this.cookieService.clearTokenCookies(res)
       throw AuthError.RefreshTokenRequired
     }
 
-    const { jti, userId, deviceId } = await this.tokenService.verifyRefreshToken(refreshToken).catch(() => {
+    // 1. Xác thực RT và lấy payload
+    const { jti, userId, sessionId } = await this.tokenService.verifyRefreshToken(refreshToken).catch(() => {
+      this.cookieService.clearTokenCookies(res)
       throw AuthError.InvalidRefreshToken
     })
 
+    // 2. Kiểm tra token tái sử dụng (replay attack)
     const isUsed = await this.sessionService.isRefreshTokenUsed(jti)
     if (isUsed) {
-      // This is a critical security event. A stolen refresh token might have been used.
-      // TODO: Invalidate all active sessions for this user.
+      // TODO: Vô hiệu hóa tất cả các phiên của người dùng này như một biện pháp bảo mật
       throw AuthError.RefreshTokenReused
     }
 
-    // Mark the refresh token as used immediately to prevent race conditions.
+    // Đánh dấu ngay lập tức là đã sử dụng để tránh race condition
     await this.sessionService.markRefreshTokenAsUsed(jti)
 
-    const user = await this.authRepository.findUniqueUserIncludeRole({ id: userId })
+    // 3. Lấy thông tin session và user từ DB
+    const session = await this.authRepository.findValidSessionById(sessionId)
 
-    if (!user) {
+    // 4. Thực hiện các kiểm tra bảo mật
+    if (!session || session.userId !== userId) {
       this.cookieService.clearTokenCookies(res)
-      throw AuthError.UserNotFound
+      throw AuthError.InvalidRefreshToken // Lỗi chung cho các trường hợp không hợp lệ
+    }
+    // `findValidSessionById` đã kiểm tra revokedAt và expiresAt
+
+    if (session.user.revokedAllSessionsBefore && session.createdAt < session.user.revokedAllSessionsBefore) {
+      this.cookieService.clearTokenCookies(res)
+      throw AuthError.SessionRevoked
     }
 
-    if (user.status !== 'ACTIVE') {
+    if (session.user.status !== 'ACTIVE') {
       this.cookieService.clearTokenCookies(res)
       throw AuthError.UserNotActive
     }
 
-    let device = await this.authRepository.findUniqueDevice({
-      id: deviceId,
-    })
-
-    if (!device) {
-      // This case is unlikely if the RT is valid, but we handle it for robustness.
-      device = await this.authRepository.createDevice({
-        userId: user.id,
-        userAgent,
-        ip,
-      })
-    } else {
-      device = await this.authRepository.updateDevice(device.id, {
-        lastActive: new Date(),
-        ip,
-      })
-    }
-
+    // 5. Cập nhật hoạt động của phiên và tạo token mới
+    const updatedSession = await this.authRepository.updateSessionLastActive(sessionId)
     const tokens = await this.generateTokens({
-      userId: user.id,
-      deviceId: device.id,
-      roleId: user.role.id,
-      roleName: user.role.name,
+      userId: session.user.id,
+      sessionId: updatedSession.id,
+      roleId: session.user.roleId,
+      roleName: session.user.role.name,
     })
 
-    this.cookieService.setTokenCookies(res, tokens.accessToken, tokens.refreshToken, true) // Always extend session on refresh
+    // 6. Set cookie mới
+    this.cookieService.setTokenCookies(res, tokens.accessToken, tokens.refreshToken, true)
 
     res.status(HttpStatus.OK).send({ message: 'auth.success.REFRESH_TOKEN_SUCCESS' })
   }
@@ -279,13 +296,18 @@ export class AuthService {
   async logout(refreshToken: string | undefined, res: Response) {
     if (refreshToken) {
       try {
-        const { jti, exp } = await this.tokenService.verifyRefreshToken(refreshToken)
+        const { sessionId, exp, jti } = await this.tokenService.verifyRefreshToken(refreshToken)
         const remainingTime = exp - Math.floor(Date.now() / 1000)
 
-        // Add to blacklist to prevent reuse until expiry.
-        await this.sessionService.addToBlacklist(jti, remainingTime)
+        // Hành động chính: Vô hiệu hóa session trong DB
+        await this.authRepository.revokeSession(sessionId)
+
+        // Hành động phụ: Blacklist JTI trong Redis để có hiệu lực tức thì
+        if (remainingTime > 0) {
+          await this.sessionService.addToBlacklist(jti, remainingTime)
+        }
       } catch (error) {
-        // Ignore errors if token is invalid, as the goal is to log out anyway.
+        // Bỏ qua lỗi nếu token không hợp lệ, vì mục tiêu là đăng xuất
       }
     }
 

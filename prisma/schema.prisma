@@ -43,6 +43,8 @@ model User {
   roleId                      Int
   role                        Role                  @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   devices                     Device[] // Liên kết 1-n với Device
+  sessions                    Session[] // Liên kết 1-n với Session
+  revokedAllSessionsBefore    DateTime?             @map("revoked_all_sessions_before") // Dùng để thu hồi tất cả các phiên đăng nhập
   carts                       CartItem[]
   orders                      Order[]
   reviews                     Review[]
@@ -150,15 +152,60 @@ model VerificationCode {
 }
 
 model Device {
-  id            Int            @id @default(autoincrement())
-  userId        Int
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  userAgent     String
-  ip            String
-  lastActive    DateTime       @default(now())
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  isActive      Boolean        @default(true)
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sessions       Session[]
+
+  // --- Device Identification ---
+  // A user-provided name for the device, e.g., "Tedy's MacBook Pro"
+  name           String?
+  // A unique and stable identifier generated on the client-side
+  fingerprint    String?   @unique
+  // Parsed from User-Agent or Client-Hints
+  type           String? // e.g., 'desktop', 'mobile', 'tv'
+  os             String? // e.g., 'Mac OS', 'Windows', 'iOS'
+  browser        String? // e.g., 'Chrome', 'Safari'
+
+  // --- Trust Management ---
+  isTrusted      Boolean   @default(false) @map("is_trusted")
+  trustExpiresAt DateTime? @map("trust_expires_at")
+
+  // --- Activity Tracking ---
+  lastIp         String?   @map("last_ip")
+  lastActiveAt   DateTime  @default(now()) @map("last_active_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId, lastActiveAt])
+  @@map("devices")
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  deviceId  Int
+  device    Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ipAddress String    @map("ip_address")
+  userAgent String    @map("user_agent") @db.Text
+
+  // Timestamps
+  // The time the refresh token associated with this session expires
+  expiresAt    DateTime  @map("expires_at")
+  // The last time this session was used to get a new access token
+  lastActiveAt DateTime  @default(now()) @map("last_active_at")
+  // If this is set, the session is considered revoked
+  revokedAt    DateTime? @map("revoked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([deviceId])
+  @@index([expiresAt])
+  @@map("sessions")
 }
 
 model Permission {

@@ -54,6 +54,7 @@ export const LoginBodySchema = UserSchema.pick({
   .extend({
     totpCode: z.string().length(6).optional(), // 2FA code
     code: z.string().length(6).optional(), // Email OTP code
+    rememberMe: z.boolean().optional().default(false),
   })
   .strict()
   .superRefine(({ totpCode, code }, ctx) => {
@@ -110,11 +111,12 @@ export const RoleSchema = z.object({
   name: z.string(),
   description: z.string(),
   isActive: z.boolean(),
-  createdById: z.number().nullable(),
-  updatedById: z.number().nullable(),
-  deletedAt: z.date().nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
+  deletedAt: z.date().nullable(),
+  createdById: z.number().nullable(),
+  updatedById: z.number().nullable(),
+  deletedById: z.number().nullable(),
 })
 
 export const LogoutBodySchema = z.object({

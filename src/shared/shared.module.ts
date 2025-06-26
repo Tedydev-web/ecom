@@ -18,6 +18,7 @@ import Redis from 'ioredis'
 import { Logger } from '@nestjs/common'
 import { CryptoService } from './services/crypto.service'
 import { SessionService } from './services/session.service'
+import { UserAgentService } from './services/user-agent.service'
 
 const redisClientProvider = {
   provide: IORedisKey,
@@ -54,6 +55,7 @@ const sharedServices = [
   CookieService,
   CryptoService,
   SessionService,
+  UserAgentService,
   {
     provide: REDIS_SERVICE,
     useClass: RedisService,

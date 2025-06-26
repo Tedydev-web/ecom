@@ -34,6 +34,8 @@ export type I18nTranslations = {
             "USER_NOT_FOUND": string;
             "USER_NOT_ACTIVE": string;
             "INVALID_CSRF_TOKEN": string;
+            "SESSION_REVOKED": string;
+            "SESSION_EXPIRED": string;
         };
     };
     "global": {

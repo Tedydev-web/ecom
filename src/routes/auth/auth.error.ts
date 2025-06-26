@@ -29,4 +29,8 @@ export const AuthError = {
   // Google OAuth Errors
   GoogleUserInfoError: GlobalError.InternalServerError('auth.error.GOOGLE_USER_INFO_ERROR'),
   InvalidCsrfToken: GlobalError.Forbidden('auth.error.INVALID_CSRF_TOKEN'),
+
+  // New errors
+  SessionRevoked: GlobalError.Unauthorized('auth.error.SESSION_REVOKED'),
+  SessionExpired: GlobalError.Unauthorized('auth.error.SESSION_EXPIRED'),
 }
