@@ -6,7 +6,10 @@ import { ApiException } from './exceptions/api.exception'
  * Follows HTTP status code conventions for consistent error handling.
  */
 export class GlobalError {
-  public static InternalServerError(message: string = 'global.error.INTERNAL_SERVER_ERROR', details?: any): ApiException {
+  public static InternalServerError(
+    message: string = 'global.error.INTERNAL_SERVER_ERROR',
+    details?: any,
+  ): ApiException {
     return new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, 'E0001', message, details)
   }
 
@@ -26,7 +29,10 @@ export class GlobalError {
     return new ApiException(HttpStatus.NOT_FOUND, 'E0005', message, details)
   }
 
-  public static UnprocessableEntity(message: string = 'global.error.UNPROCESSABLE_ENTITY', details?: any): ApiException {
+  public static UnprocessableEntity(
+    message: string = 'global.error.UNPROCESSABLE_ENTITY',
+    details?: any,
+  ): ApiException {
     return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, 'E0006', message, details)
   }
 
@@ -58,7 +64,10 @@ export class GlobalError {
     return new ApiException(HttpStatus.NOT_ACCEPTABLE, 'E0013', message, details)
   }
 
-  public static UnsupportedMediaType(message: string = 'global.error.UNSUPPORTED_MEDIA_TYPE', details?: any): ApiException {
+  public static UnsupportedMediaType(
+    message: string = 'global.error.UNSUPPORTED_MEDIA_TYPE',
+    details?: any,
+  ): ApiException {
     return new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, 'E0014', message, details)
   }
 }

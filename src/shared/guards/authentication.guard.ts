@@ -15,10 +15,10 @@ export class AuthenticationGuard implements CanActivate {
     @Inject(tokens.API_KEY_GUARD) private readonly apiKeyGuard: APIKeyGuard,
   ) {
     this.authTypeGuardMap = {
-    [AuthType.Bearer]: this.accessTokenGuard,
-    [AuthType.APIKey]: this.apiKeyGuard,
-    [AuthType.None]: { canActivate: () => true },
-  }
+      [AuthType.Bearer]: this.accessTokenGuard,
+      [AuthType.APIKey]: this.apiKeyGuard,
+      [AuthType.None]: { canActivate: () => true },
+    }
   }
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const authTypeValue = this.reflector.getAllAndOverride<AuthTypeDecoratorPayload | undefined>(AUTH_TYPE_KEY, [

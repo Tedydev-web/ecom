@@ -28,24 +28,12 @@ export class TransformInterceptor implements NestInterceptor {
       switchMap(async (responseData) => {
         // Handle empty responses or direct primitive values
         if (responseData === null || responseData === undefined) {
-          return this.createStandardResponse(
-            statusCode,
-            'global.success.GENERAL',
-            null,
-            request,
-            null
-          )
+          return this.createStandardResponse(statusCode, 'global.success.GENERAL', null, request, null)
         }
 
         // Handle string responses (for backwards compatibility)
         if (typeof responseData === 'string') {
-          return this.createStandardResponse(
-            statusCode,
-            responseData,
-            null,
-            request,
-            null
-          )
+          return this.createStandardResponse(statusCode, responseData, null, request, null)
         }
 
         // Handle object responses
@@ -53,7 +41,7 @@ export class TransformInterceptor implements NestInterceptor {
           // If response already contains message property
           if (responseData.message) {
             const translatedMessage = await this.i18n.translate(responseData.message, {
-              lang: request.acceptsLanguages(['vi', 'en']) || 'vi'
+              lang: request.acceptsLanguages(['vi', 'en']) || 'vi',
             })
 
             return this.createStandardResponse(
@@ -61,7 +49,7 @@ export class TransformInterceptor implements NestInterceptor {
               translatedMessage as string,
               responseData.data || null,
               request,
-              responseData.metadata || null
+              responseData.metadata || null,
             )
           }
 
@@ -72,28 +60,16 @@ export class TransformInterceptor implements NestInterceptor {
               'global.success.GENERAL',
               responseData.data,
               request,
-              responseData.metadata || null
+              responseData.metadata || null,
             )
           }
 
           // Default case: treat entire response as data
-          return this.createStandardResponse(
-            statusCode,
-            'global.success.GENERAL',
-            responseData,
-            request,
-            null
-          )
+          return this.createStandardResponse(statusCode, 'global.success.GENERAL', responseData, request, null)
         }
 
         // Fallback for other types
-        return this.createStandardResponse(
-          statusCode,
-          'global.success.GENERAL',
-          responseData,
-          request,
-          null
-        )
+        return this.createStandardResponse(statusCode, 'global.success.GENERAL', responseData, request, null)
       }),
     )
   }
@@ -103,13 +79,13 @@ export class TransformInterceptor implements NestInterceptor {
     message: string,
     data: any,
     request: Request,
-    metadata: Record<string, any> | null
+    metadata: Record<string, any> | null,
   ): Promise<StandardResponse> {
     // Translate message if it's a key
-    const translatedMessage = message.includes('.') 
-      ? await this.i18n.translate(message, {
-          lang: request.acceptsLanguages(['vi', 'en']) || 'vi'
-        }) as string
+    const translatedMessage = message.includes('.')
+      ? ((await this.i18n.translate(message, {
+          lang: request.acceptsLanguages(['vi', 'en']) || 'vi',
+        })) as string)
       : message
 
     const response: StandardResponse = {
@@ -118,7 +94,7 @@ export class TransformInterceptor implements NestInterceptor {
       message: translatedMessage,
       timestamp: new Date().toISOString(),
       path: request.url,
-      requestId: request.headers['x-request-id'] as string
+      requestId: request.headers['x-request-id'] as string,
     }
 
     // Only include data if it's not null/undefined

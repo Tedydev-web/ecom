@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as crypto from 'crypto'
 
 @Injectable()
 export class CryptoService {
+  private readonly logger = new Logger(CryptoService.name)
   private readonly encryptionKey: Buffer
   private readonly algorithm = 'aes-256-gcm'
   private readonly ivLength = 16
@@ -37,7 +38,7 @@ export class CryptoService {
       return decrypted.toString('utf8')
     } catch (error) {
       // Log the error for debugging, but don't expose details to the caller
-      console.error('Decryption failed:', error)
+      this.logger.error('Decryption failed:', error)
       return null
     }
   }

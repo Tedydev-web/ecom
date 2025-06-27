@@ -22,4 +22,4 @@ export interface IRedisService {
   keys(pattern: string): Promise<string[]>
 
   pipeline(commands: (string | number | Buffer)[][]): Promise<[error: Error | null, result: unknown][] | null>
-} 
+}

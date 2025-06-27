@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common'
-import { LanguageController } from 'src/routes/language/language.controller'
-import { LanguageRepo } from 'src/routes/language/language.repo'
-import { LanguageService } from 'src/routes/language/language.service'
+import { LanguageController } from './language.controller'
+import { LanguageService } from './language.service'
+import { LanguageRepo } from './language.repo'
+import { ImportExportService } from '../../shared/services/import-export.service'
 
 @Module({
-  providers: [LanguageService, LanguageRepo],
   controllers: [LanguageController],
+  providers: [LanguageService, LanguageRepo, ImportExportService],
+  exports: [LanguageService, LanguageRepo],
 })
 export class LanguageModule {}
